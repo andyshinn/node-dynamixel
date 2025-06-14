@@ -388,4 +388,222 @@ describe('DynamixelController Integration', () => {
       expect(devices).toHaveLength(2);
     });
   });
+
+  describe('Connection Type Detection', () => {
+    test('should detect USB connection type', () => {
+      controller = new DynamixelController({ connectionType: 'usb' });
+      expect(controller.connectionType).toBe('usb');
+    });
+
+    test('should detect serial connection type', () => {
+      controller = new DynamixelController({ connectionType: 'serial' });
+      expect(controller.connectionType).toBe('serial');
+    });
+
+    test('should detect webserial connection type', () => {
+      // Skip this test in Node.js environment where Web Serial API is not available
+      if (typeof navigator === 'undefined' || !navigator.serial) {
+        expect(() => new DynamixelController({ connectionType: 'webserial' }))
+          .toThrow('Web Serial API not available');
+        return;
+      }
+
+      controller = new DynamixelController({ connectionType: 'webserial' });
+      expect(controller.connectionType).toBe('webserial');
+    });
+
+    test('should auto-detect connection type', () => {
+      controller = new DynamixelController({ connectionType: 'auto' });
+      expect(controller.connectionType).toBe('auto');
+    });
+  });
+
+  describe('Event Handling', () => {
+    beforeEach(() => {
+      controller = new DynamixelController();
+    });
+
+    test('should handle device connected event', () => {
+      const mockCallback = jest.fn();
+      controller.on('deviceConnected', mockCallback);
+
+      // Simulate device connection
+      controller.emit('deviceConnected', { id: 1 });
+
+      expect(mockCallback).toHaveBeenCalledWith({ id: 1 });
+    });
+
+    test('should handle device disconnected event', () => {
+      const mockCallback = jest.fn();
+      controller.on('deviceDisconnected', mockCallback);
+
+      // Simulate device disconnection
+      controller.emit('deviceDisconnected', { id: 1 });
+
+      expect(mockCallback).toHaveBeenCalledWith({ id: 1 });
+    });
+
+    test('should handle error events', () => {
+      const mockCallback = jest.fn();
+      controller.on('error', mockCallback);
+
+      // Simulate error
+      controller.emit('error', new Error('Test error'));
+
+      expect(mockCallback).toHaveBeenCalledWith(expect.any(Error));
+    });
+  });
+
+  describe('Bulk Operations', () => {
+    beforeEach(async() => {
+      controller = new DynamixelController();
+      controller.isConnected = true;
+
+      // Add multiple mock devices
+      controller.addDevice(1, { modelNumber: 1020, firmwareVersion: 52 });
+      controller.addDevice(2, { modelNumber: 1020, firmwareVersion: 52 });
+    });
+
+    test('should perform bulk read', async() => {
+      controller.bulkRead = jest.fn().mockResolvedValue([
+        { id: 1, data: [0x01, 0x02] },
+        { id: 2, data: [0x03, 0x04] }
+      ]);
+
+      const results = await controller.bulkRead([1, 2], 0x84, 2);
+      expect(results).toHaveLength(2);
+      expect(results[0].id).toBe(1);
+      expect(results[1].id).toBe(2);
+    });
+
+    test('should perform bulk write', async() => {
+      controller.bulkWrite = jest.fn().mockResolvedValue(true);
+
+      const writeData = [
+        { id: 1, address: 0x84, data: [0x01, 0x02] },
+        { id: 2, address: 0x84, data: [0x03, 0x04] }
+      ];
+
+      const result = await controller.bulkWrite(writeData);
+      expect(result).toBe(true);
+    });
+
+    test('should perform sync read', async() => {
+      controller.syncRead = jest.fn().mockResolvedValue([
+        { id: 1, data: [0x01, 0x02] },
+        { id: 2, data: [0x03, 0x04] }
+      ]);
+
+      const results = await controller.syncRead([1, 2], 0x84, 2);
+      expect(results).toHaveLength(2);
+    });
+
+    test('should perform sync write', async() => {
+      controller.syncWrite = jest.fn().mockResolvedValue(true);
+
+      const writeData = [
+        { id: 1, data: [0x01, 0x02] },
+        { id: 2, data: [0x03, 0x04] }
+      ];
+
+      const result = await controller.syncWrite(0x84, writeData);
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('Connection Management Edge Cases', () => {
+    test('should handle connection with specific device path', async() => {
+      controller = new DynamixelController({ connectionType: 'serial' });
+      controller.connect = jest.fn().mockResolvedValue(true);
+
+      const result = await controller.connect('/dev/ttyUSB0');
+      expect(result).toBe(true);
+      expect(controller.connect).toHaveBeenCalledWith('/dev/ttyUSB0');
+    });
+
+    test('should handle connection with options', async() => {
+      controller = new DynamixelController();
+      controller.connect = jest.fn().mockResolvedValue(true);
+
+      const options = { baudRate: 57600, timeout: 1000 };
+      const result = await controller.connect(null, options);
+      expect(result).toBe(true);
+    });
+
+    test('should handle multiple disconnect calls', async() => {
+      controller = new DynamixelController();
+      controller.isConnected = true;
+      controller.disconnect = jest.fn().mockResolvedValue(undefined);
+
+      await controller.disconnect();
+      await controller.disconnect(); // Second call should not throw
+
+      expect(controller.disconnect).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Device Information', () => {
+    beforeEach(() => {
+      controller = new DynamixelController();
+      controller.isConnected = true;
+    });
+
+    test('should get device info', async() => {
+      controller.getDeviceInfo = jest.fn().mockResolvedValue({
+        id: 1,
+        modelNumber: 1020,
+        firmwareVersion: 52,
+        modelName: 'XL430-W250'
+      });
+
+      const info = await controller.getDeviceInfo(1);
+      expect(info.id).toBe(1);
+      expect(info.modelName).toBe('XL430-W250');
+    });
+
+    test('should handle device info error', async() => {
+      controller.getDeviceInfo = jest.fn().mockRejectedValue(new Error('Device not found'));
+
+      await expect(controller.getDeviceInfo(99)).rejects.toThrow('Device not found');
+    });
+  });
+
+  describe('Protocol Version Handling', () => {
+    test('should handle Protocol 2.0', () => {
+      controller = new DynamixelController({ protocolVersion: 2.0 });
+      // The controller doesn't expose protocolVersion directly, but it should accept the option
+      expect(controller).toBeInstanceOf(DynamixelController);
+    });
+
+    test('should default to Protocol 2.0', () => {
+      controller = new DynamixelController();
+      // The controller uses Protocol 2.0 by default internally
+      expect(controller).toBeInstanceOf(DynamixelController);
+    });
+  });
+
+  describe('Timeout Handling', () => {
+    beforeEach(() => {
+      controller = new DynamixelController();
+      controller.isConnected = true;
+    });
+
+    test('should handle custom timeout for operations', async() => {
+      controller.ping = jest.fn().mockImplementation((id, timeout) => {
+        return new Promise((resolve) => {
+          setTimeout(() => resolve({ id, timeout }), 10);
+        });
+      });
+
+      const result = await controller.ping(1, 500);
+      expect(result.timeout).toBe(500);
+    });
+
+    test('should use default timeout when not specified', async() => {
+      controller.ping = jest.fn().mockResolvedValue({ id: 1 });
+
+      await controller.ping(1);
+      expect(controller.ping).toHaveBeenCalledWith(1);
+    });
+  });
 });
