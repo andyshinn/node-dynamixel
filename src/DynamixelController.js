@@ -8,7 +8,7 @@ import { DynamixelDevice, Protocol2 } from './dynamixel/index.js';
  * Supports both USB and Serial connection methods
  */
 export class DynamixelController extends EventEmitter {
-    constructor(options = {}) {
+  constructor(options = {}) {
     super();
 
     // Choose connection type: 'usb', 'serial', 'webserial', or 'auto'
@@ -20,7 +20,7 @@ export class DynamixelController extends EventEmitter {
     this.createConnection(options);
   }
 
-    /**
+  /**
    * Create the appropriate connection based on type
    * @param {Object} options - Connection options
    */
@@ -61,7 +61,7 @@ export class DynamixelController extends EventEmitter {
     try {
       console.log('🔌 Attempting USB connection as fallback');
       return new U2D2Connection(options);
-    } catch (error) {
+    } catch (_error) {
       console.log('❌ USB connection not available');
       // Return serial as ultimate fallback
       return new SerialConnection(options);
