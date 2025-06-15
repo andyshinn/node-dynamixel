@@ -13,6 +13,10 @@ A Node.js library for controlling DYNAMIXEL servo motors using Protocol 2.0 via 
 - ✅ **Cross-platform** support (Linux, macOS, Windows)
 - ✅ **Electron & Web Serial API** support for desktop applications
 - ✅ **Multiple Connection Types** (USB, Serial, Web Serial)
+- 🆕 **Advanced Alarm Management** with intelligent thresholds and monitoring
+- 🆕 **Motor Profiles System** for optimal motor configurations
+- 🆕 **Enhanced Logging** with performance metrics and structured output
+- 🆕 **Multi-Motor Synchronization** optimization settings
 
 ## Supported Devices
 
@@ -295,6 +299,155 @@ const promises = devices.map(async (device) => {
 
 await Promise.all(promises);
 console.log('All devices moving!');
+```
+
+## Enhanced Features (Inspired by DynaNode)
+
+The library includes several advanced features for professional robotics applications:
+
+### Alarm Management
+
+Advanced alarm system with intelligent thresholds and monitoring:
+
+```javascript
+import { AlarmManager } from 'dynamixel';
+
+const alarmManager = new AlarmManager();
+
+// Set up alarm listeners
+alarmManager.on('alarm', (alarm) => {
+  console.log(`⚠️ ${alarm.severity}: ${alarm.message}`);
+});
+
+alarmManager.on('emergency_stop', (event) => {
+  console.log(`🛑 Emergency stop for device ${event.deviceId}`);
+  // Implement emergency stop logic
+});
+
+// Monitor device sensors
+alarmManager.checkSensorAlarms(deviceId, {
+  temperature: 75,  // °C
+  voltage: 12.0,    // V
+  load: 85          // %
+});
+
+// Process hardware error flags
+alarmManager.processHardwareError(deviceId, errorFlags);
+```
+
+### Motor Profiles
+
+Predefined configurations for different motor models and applications:
+
+```javascript
+import { MotorProfiles } from 'dynamixel';
+
+const motorProfiles = new MotorProfiles();
+
+// Get profile for specific motor
+const profile = motorProfiles.getProfile('XM430-W350');
+console.log('Max torque:', profile.specs.stallTorque, 'kg·cm');
+
+// Get recommended settings for precision mode
+const settings = motorProfiles.getRecommendedSettings('XM430-W350', 'precision');
+await device.applySettings(settings);
+
+// Get application profiles
+const armProfile = motorProfiles.getProfile('ROBOT_ARM_6DOF');
+console.log('Application:', armProfile.description);
+
+// Multi-motor synchronization settings
+const syncSettings = motorProfiles.getSynchronizationSettings(['XM430-W350', 'MX-28']);
+console.log('Recommended sync velocity:', syncSettings.recommendedVelocity);
+```
+
+### Enhanced Logging
+
+Structured logging with performance metrics and filtering:
+
+```javascript
+import { Logger } from 'dynamixel';
+
+const logger = new Logger({
+  level: 'debug',
+  enablePerformanceMetrics: true
+});
+
+// Create device-specific logger
+const deviceLogger = logger.forDevice(1);
+
+// Performance measurement
+const result = await logger.measureAsync('device_discovery', async () => {
+  return await controller.discoverDevices();
+});
+
+// Protocol logging
+logger.logPacketSent(deviceId, 'PING', [], { duration: 2.5 });
+logger.logPacketReceived(deviceId, packet, { duration: 1.8 });
+
+// Get filtered logs
+const errorLogs = logger.getLogs({ level: 'error', deviceId: 1 });
+const exportedLogs = logger.exportLogs('csv', { since: Date.now() - 3600000 });
+```
+
+### Complete Enhanced Example
+
+```javascript
+import {
+  DynamixelController,
+  AlarmManager,
+  MotorProfiles,
+  Logger
+} from 'dynamixel';
+
+// Setup enhanced features
+const logger = new Logger({ level: 'debug', enablePerformanceMetrics: true });
+const alarmManager = new AlarmManager();
+const motorProfiles = new MotorProfiles();
+
+const controller = new DynamixelController({
+  connectionType: 'auto',
+  logger: logger.forCategory('controller')
+});
+
+// Enhanced event handling
+controller.on('device_discovered', (device) => {
+  logger.info(`Device discovered: ${device.modelName} (ID: ${device.id})`);
+
+  // Apply motor profile
+  const profile = motorProfiles.getProfile(device.modelName);
+  if (profile) {
+    const settings = motorProfiles.getRecommendedSettings(device.modelName, 'balanced');
+    // Apply settings to device...
+  }
+});
+
+// Monitor devices with alarms
+async function monitorDevice(device) {
+  const status = await device.getStatus();
+
+  // Check for alarms
+  alarmManager.checkSensorAlarms(device.id, {
+    temperature: status.temperature,
+    voltage: status.voltage,
+    load: status.load
+  });
+
+  // Process hardware errors
+  if (status.hardwareError > 0) {
+    alarmManager.processHardwareError(device.id, status.hardwareError);
+  }
+}
+
+// Use enhanced discovery with monitoring
+const devices = await logger.measureAsync('enhanced_discovery', async () => {
+  return await controller.discoverDevices();
+});
+
+// Monitor all devices
+for (const device of devices) {
+  await monitorDevice(device);
+}
 ```
 
 ## Error Handling

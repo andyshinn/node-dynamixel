@@ -1,6 +1,6 @@
 {
   "name": "dynamixel",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Node.js library for controlling DYNAMIXEL servo motors via U2D2 interface with Protocol 2.0 support",
   "main": "index.js",
   "type": "module",
