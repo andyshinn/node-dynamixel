@@ -154,7 +154,7 @@ describe('Separated Discovery Functionality', () => {
       expect(typeof controller.connectToDevice).toBe('function');
     });
 
-        test('should handle device connection parameters correctly', async() => {
+    test('should handle device connection parameters correctly', async() => {
       controller = new DynamixelController({ deferConnection: true });
 
       const deviceInfo = {
@@ -219,7 +219,7 @@ describe('Separated Discovery Functionality', () => {
   });
 
   describe('Error Handling', () => {
-                    test('should handle connectToDevice gracefully', async() => {
+    test('should handle connectToDevice gracefully', async() => {
       controller = new DynamixelController({ deferConnection: true });
 
       // Mock the connectToDevice method to avoid real connection attempts
@@ -244,7 +244,7 @@ describe('Separated Discovery Functionality', () => {
       controller.connectToDevice = originalConnectToDevice;
     });
 
-        test('should handle discovery errors gracefully', async() => {
+    test('should handle discovery errors gracefully', async() => {
       // Test that discovery methods exist and return expected structure
       // even when encountering errors (this test doesn't mock to avoid complexity)
       const devices = await DynamixelController.discoverCommunicationDevices();
