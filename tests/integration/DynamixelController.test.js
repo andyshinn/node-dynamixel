@@ -24,6 +24,10 @@ const mockUSB = {
 jest.unstable_mockModule('serialport', () => mockSerialPort);
 jest.unstable_mockModule('usb', () => ({ usb: mockUSB }));
 
+// Import modules after mocking
+const { SerialConnection } = await import('../../src/transport/SerialConnection.esm.js');
+const { U2D2Connection } = await import('../../src/transport/U2D2Connection.esm.js');
+
 describe('DynamixelController Integration', () => {
   let controller;
 
@@ -52,6 +56,10 @@ describe('DynamixelController Integration', () => {
 
     // Mock USB to return empty list to avoid real hardware access
     mockUSB.getDeviceList.mockReturnValue([]);
+
+    // Mock the static methods that are actually called by discoverCommunicationDevices
+    jest.spyOn(SerialConnection, 'listSerialPorts').mockResolvedValue([]);
+    jest.spyOn(U2D2Connection, 'listUSBDevices').mockReturnValue([]);
   });
 
   afterEach(async() => {
@@ -137,22 +145,24 @@ describe('DynamixelController Integration', () => {
     });
 
     test('should discover U2D2 devices specifically', async() => {
-      // Mock devices with U2D2 signature
-      mockSerialPort.list.mockResolvedValue([
+      // Mock SerialConnection.listSerialPorts() to return U2D2-compatible serial device
+      jest.spyOn(SerialConnection, 'listSerialPorts').mockResolvedValue([
         {
           path: '/dev/tty.usbserial-FTAA0AS4',
           manufacturer: 'FTDI',
           vendorId: '0403',
-          productId: '6014'
+          productId: '6014',
+          isU2D2: true  // This should be set by the SerialConnection.listSerialPorts() method
         }
       ]);
 
-      mockUSB.getDeviceList.mockReturnValue([
+      // Mock U2D2Connection.listUSBDevices() to return U2D2-compatible USB device
+      jest.spyOn(U2D2Connection, 'listUSBDevices').mockReturnValue([
         {
-          deviceDescriptor: {
-            idVendor: 0x0403,
-            idProduct: 0x6014
-          }
+          vendorId: 0x0403,
+          productId: 0x6014,
+          busNumber: 1,
+          deviceAddress: 1
         }
       ]);
 

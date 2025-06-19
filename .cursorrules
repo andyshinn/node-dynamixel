@@ -50,6 +50,52 @@ This is a Node.js library for controlling DYNAMIXEL servo motors via U2D2 interf
 - Calculate CRC using Protocol2.calculateCRC()
 - Handle both little-endian and big-endian data properly
 
+## Development Workflow & Quality Assurance
+
+### **MANDATORY Before Any Commit or Pull Request**
+**Always run these commands in sequence - NO EXCEPTIONS:**
+
+1. **Linting**: `npm run lint` (or `npm run lint:fix` to auto-fix)
+2. **Building**: `npm run build` (verify TypeScript generation)
+3. **Testing**: `npm test` (full test suite with --detectOpenHandles)
+4. **Package Verification**: `npm pack --dry-run` (ensure package is valid)
+
+### **Development Commands Reference**
+```bash
+# Primary workflow (run ALL of these before committing):
+npm run lint          # Check code style and catch errors
+npm run lint:fix       # Auto-fix linting issues where possible
+npm run build          # Build ESM/CommonJS + TypeScript definitions
+npm test               # Run all 284 tests with handle detection
+npm pack --dry-run     # Verify package contents
+
+# Individual test commands:
+npm run test:unit      # Unit tests only
+npm run test:integration  # Integration tests only
+npm run test:coverage  # Tests with coverage report
+npm run test:watch     # Watch mode for development
+
+# Development helpers:
+npm run build:watch    # Watch mode for building
+npm run discovery      # Test device discovery
+npm run diagnostics    # USB diagnostics
+```
+
+### **Code Quality Standards**
+- **Zero linting errors** - Fix ALL ESLint warnings and errors
+- **All tests must pass** - No exceptions, including integration tests
+- **Clean builds** - TypeScript definitions must generate without errors
+- **No hanging handles** - Jest must exit cleanly (--detectOpenHandles)
+- **Package integrity** - npm pack must succeed without warnings
+
+### **Pre-Commit Checklist**
+- [ ] `npm run lint` passes with zero errors
+- [ ] `npm run build` completes successfully
+- [ ] `npm test` shows "284 passed" with no hanging handles
+- [ ] `npm pack --dry-run` shows expected package contents
+- [ ] `node examples/separated-discovery.js` works with real hardware (if available)
+- [ ] Git status is clean (no untracked build artifacts)
+
 ## Testing Guidelines
 
 ### Test Structure
@@ -57,6 +103,17 @@ This is a Node.js library for controlling DYNAMIXEL servo motors via U2D2 interf
 - Integration tests in `tests/integration/` for real hardware scenarios
 - Use Jest with ES modules support
 - Mock hardware connections for unit tests
+
+### **Testing + Linting Workflow**
+**CRITICAL**: Always run linting before testing to catch code quality issues early:
+```bash
+# Correct workflow:
+npm run lint           # Fix any linting errors first
+npm run build          # Ensure build works
+npm test               # Then run full test suite
+
+# NEVER skip linting - it catches critical issues that tests might miss
+```
 
 ### Test Patterns
 - Use `createStatusPacketBuffer()` helper for mock DYNAMIXEL responses
@@ -127,6 +184,12 @@ This is a Node.js library for controlling DYNAMIXEL servo motors via U2D2 interf
 
 ## Common Pitfalls to Avoid
 
+### **Development Workflow Issues**
+- **DON'T commit without linting** - Always run `npm run lint` first
+- **DON'T skip the build step** - TypeScript definitions must be current
+- **DON'T ignore test failures** - All 284 tests must pass
+- **DON'T commit hanging tests** - Use --detectOpenHandles to verify clean exit
+
 ### Protocol Issues
 - Don't access `response.error` on raw buffers - parse first with Protocol2.parseStatusPacket()
 - Don't assume packet lengths - always validate with Protocol2.getCompletePacketLength()
@@ -176,4 +239,4 @@ export { DynamixelController } from './DynamixelController.js';
 - TypeScript definitions are automatically generated and should match JSDoc exactly
 - Test suite is comprehensive with 284 tests covering all major functionality
 
-When making changes, always run the full test suite and ensure the separated-discovery example works correctly with real hardware.
+**REMEMBER**: Always run `npm run lint && npm run build && npm test` before committing. When making changes, ensure the separated-discovery example works correctly with real hardware.
