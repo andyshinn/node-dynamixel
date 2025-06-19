@@ -1,5 +1,41 @@
 import { describe, test, expect, beforeEach, jest } from '@jest/globals';
 import { DynamixelDevice } from '../../src/dynamixel/DynamixelDevice.js';
+import { Protocol2 } from '../../src/dynamixel/Protocol2.js';
+
+/**
+ * Helper function to create a status packet buffer
+ * @param {number} id - Device ID
+ * @param {number} error - Error code (0 = no error)
+ * @param {Array} parameters - Response parameters
+ * @returns {Buffer} - Raw status packet buffer
+ */
+function createStatusPacketBuffer(id, error = 0, parameters = []) {
+  const HEADER = [0xFF, 0xFF, 0xFD, 0x00];
+  const INSTRUCTION_STATUS = 0x55;
+
+  const paramArray = Array.isArray(parameters) ? parameters : Array.from(parameters);
+  const length = 4 + paramArray.length; // Instruction + Error + Parameters + CRC(2)
+
+  // Build packet without CRC
+  const packet = [
+    ...HEADER,           // Header: 0xFF 0xFF 0xFD 0x00
+    id,                  // Packet ID
+    length & 0xFF,       // Length low byte
+    (length >> 8) & 0xFF, // Length high byte
+    INSTRUCTION_STATUS,  // Status instruction
+    error,               // Error byte
+    ...paramArray        // Parameters
+  ];
+
+  // Calculate CRC for the packet
+  const crc = Protocol2.calculateCRC(packet);
+
+  // Add CRC to packet
+  packet.push(crc & 0xFF);        // CRC low byte
+  packet.push((crc >> 8) & 0xFF); // CRC high byte
+
+  return Buffer.from(packet);
+}
 
 describe('DynamixelDevice', () => {
   let device;
@@ -67,10 +103,9 @@ describe('DynamixelDevice', () => {
   describe('Read/Write Operations', () => {
     test('should read data from control table', async() => {
       const expectedData = Buffer.from([0x01, 0x02]);
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x01, 0x02]
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x01, 0x02])
+      );
 
       const data = await device.read(0x84, 2);
 
@@ -79,7 +114,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should write data to control table', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       const result = await device.write(0x84, [0x01, 0x02]);
 
@@ -88,10 +125,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should read byte value', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x42]
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x42])
+      );
 
       const value = await device.readByte(0x40);
 
@@ -99,7 +135,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should write byte value', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       const result = await device.writeByte(0x40, 0x42);
 
@@ -107,10 +145,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should read word value (little-endian)', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x00, 0x08] // 2048 in little-endian
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x00, 0x08]) // 2048 in little-endian
+      );
 
       const value = await device.readWord(0x84);
 
@@ -118,7 +155,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should write word value (little-endian)', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       const result = await device.writeWord(0x84, 2048);
 
@@ -128,7 +167,9 @@ describe('DynamixelDevice', () => {
 
   describe('Torque Control', () => {
     test('should enable torque', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       await device.setTorqueEnable(true);
 
@@ -136,7 +177,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should disable torque', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       await device.setTorqueEnable(false);
 
@@ -144,10 +187,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should get torque status', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [1]
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [1])
+      );
 
       const status = await device.getTorqueEnable();
 
@@ -157,7 +199,9 @@ describe('DynamixelDevice', () => {
 
   describe('Position Control', () => {
     test('should set goal position', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       await device.setGoalPosition(2048);
 
@@ -165,10 +209,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should get goal position', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x00, 0x08, 0x00, 0x00] // 2048 in little-endian
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x00, 0x08, 0x00, 0x00]) // 2048 in little-endian
+      );
 
       const position = await device.getGoalPosition();
 
@@ -176,10 +219,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should get present position', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x00, 0x04, 0x00, 0x00] // 1024 in little-endian
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x00, 0x04, 0x00, 0x00]) // 1024 in little-endian
+      );
 
       const position = await device.getPresentPosition();
 
@@ -189,7 +231,9 @@ describe('DynamixelDevice', () => {
 
   describe('Velocity Control', () => {
     test('should set goal velocity', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       await device.setGoalVelocity(100);
 
@@ -197,10 +241,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should get present velocity', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x32, 0x00, 0x00, 0x00] // 50 in little-endian
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x32, 0x00, 0x00, 0x00]) // 50 in little-endian
+      );
 
       const velocity = await device.getPresentVelocity();
 
@@ -210,10 +253,9 @@ describe('DynamixelDevice', () => {
 
   describe('Status Reading', () => {
     test('should read temperature', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [35]
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [35])
+      );
 
       const temp = await device.getPresentTemperature();
 
@@ -221,10 +263,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should read voltage', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [0x78, 0x00] // 120 in little-endian (12.0V)
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x78, 0x00]) // 120 in little-endian (12.0V)
+      );
 
       const voltage = await device.getPresentVoltage();
 
@@ -234,7 +275,9 @@ describe('DynamixelDevice', () => {
 
   describe('LED Control', () => {
     test('should turn LED on', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       await device.setLED(true);
 
@@ -242,7 +285,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should turn LED off', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({ error: 0 });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
 
       await device.setLED(false);
 
@@ -250,10 +295,9 @@ describe('DynamixelDevice', () => {
     });
 
     test('should get LED status', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0,
-        parameters: [1]
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [1])
+      );
 
       const status = await device.getLED();
 
@@ -263,17 +307,17 @@ describe('DynamixelDevice', () => {
 
   describe('Error Handling', () => {
     test('should handle device errors in read operations', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0x01 // Instruction error
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0x01, []) // Instruction error
+      );
 
       await expect(device.read(0x40, 1)).rejects.toThrow('Device 1 error');
     });
 
     test('should handle device errors in write operations', async() => {
-      mockConnection.sendAndWaitForResponse.mockResolvedValue({
-        error: 0x02 // CRC error
-      });
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0x02, []) // CRC error
+      );
 
       await expect(device.write(0x40, [1])).rejects.toThrow('Device 1 error');
     });

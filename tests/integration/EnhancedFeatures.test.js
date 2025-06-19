@@ -444,4 +444,54 @@ describe('Enhanced Features Integration', () => {
       ]);
     });
   });
+
+  describe('Separated Discovery Integration', () => {
+    test('should support the complete separated discovery workflow', async() => {
+      // Step 1: Discover devices using static method (no connection required)
+      const devices = await DynamixelController.discoverCommunicationDevices();
+
+      expect(devices).toHaveProperty('usb');
+      expect(devices).toHaveProperty('serial');
+      expect(devices).toHaveProperty('webserial');
+      expect(Array.isArray(devices.usb)).toBe(true);
+      expect(Array.isArray(devices.serial)).toBe(true);
+      expect(typeof devices.webserial).toBe('boolean');
+
+      // Step 2: Create controller with deferred connection
+      const deferredController = new DynamixelController({ deferConnection: true });
+
+      expect(deferredController.deferConnection).toBe(true);
+      expect(deferredController.connection).toBeNull();
+      expect(deferredController.isConnected).toBe(false);
+
+      // Step 3: Verify connectToDevice method is available
+      expect(typeof deferredController.connectToDevice).toBe('function');
+
+      // Note: We don't actually connect to avoid hardware dependency in tests
+    });
+
+    test('should discover U2D2 devices specifically', async() => {
+      const u2d2Devices = await DynamixelController.discoverU2D2Devices();
+
+      expect(Array.isArray(u2d2Devices)).toBe(true);
+
+      // If any U2D2 devices are found, they should have the right properties
+      u2d2Devices.forEach(device => {
+        expect(device).toHaveProperty('recommended', true);
+        expect(device).toHaveProperty('type');
+        expect(['usb', 'serial'].includes(device.type)).toBe(true);
+        expect(device).toHaveProperty('name');
+      });
+    });
+
+    test('should maintain backward compatibility', () => {
+      // Original usage should still work
+      const traditionalController = new DynamixelController();
+
+      expect(traditionalController.deferConnection).toBe(false);
+      expect(traditionalController.connection).not.toBeNull();
+      expect(typeof traditionalController.connect).toBe('function');
+      expect(typeof traditionalController.discoverDevices).toBe('function');
+    });
+  });
 });

@@ -65,12 +65,18 @@ export class DynamixelDevice extends EventEmitter {
     try {
       const response = await this.connection.sendAndWaitForResponse(packet, this.id, timeout);
 
-      if (response.error !== 0) {
-        const errorMsg = Protocol2.getErrorDescription(response.error);
+      // First parse the raw buffer into a status packet
+      const statusPacket = Protocol2.parseStatusPacket(response);
+      if (!statusPacket) {
+        throw new Error(`Invalid response from device ${this.id}`);
+      }
+
+      if (statusPacket.error !== 0) {
+        const errorMsg = Protocol2.getErrorDescription(statusPacket.error);
         throw new Error(`Device ${this.id} error: ${errorMsg}`);
       }
 
-      return Buffer.from(response.parameters);
+      return Buffer.from(statusPacket.parameters);
     } catch (error) {
       this.emit('error', error);
       throw error;
@@ -97,8 +103,14 @@ export class DynamixelDevice extends EventEmitter {
     try {
       const response = await this.connection.sendAndWaitForResponse(packet, this.id, timeout);
 
-      if (response.error !== 0) {
-        const errorMsg = Protocol2.getErrorDescription(response.error);
+      // First parse the raw buffer into a status packet
+      const statusPacket = Protocol2.parseStatusPacket(response);
+      if (!statusPacket) {
+        throw new Error(`Invalid response from device ${this.id}`);
+      }
+
+      if (statusPacket.error !== 0) {
+        const errorMsg = Protocol2.getErrorDescription(statusPacket.error);
         throw new Error(`Device ${this.id} error: ${errorMsg}`);
       }
 

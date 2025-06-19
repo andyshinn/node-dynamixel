@@ -71,6 +71,20 @@ describe('DynamixelController Integration', () => {
       expect(controller.isConnected).toBe(false);
     });
 
+    test('should create controller with deferred connection', () => {
+      controller = new DynamixelController({ deferConnection: true });
+      expect(controller).toBeInstanceOf(DynamixelController);
+      expect(controller.connection).toBeNull();
+      expect(controller.deferConnection).toBe(true);
+    });
+
+    test('should create connection by default when deferConnection is false', () => {
+      controller = new DynamixelController({ deferConnection: false });
+      expect(controller).toBeInstanceOf(DynamixelController);
+      expect(controller.connection).not.toBeNull();
+      expect(controller.deferConnection).toBe(false);
+    });
+
     test('should handle missing USB module gracefully', async() => {
       // Mock USB module as unavailable
       mockUSB.getDeviceList.mockImplementation(() => {
@@ -81,6 +95,111 @@ describe('DynamixelController Integration', () => {
 
       // Should fallback gracefully
       expect(controller).toBeInstanceOf(DynamixelController);
+    });
+  });
+
+  describe('Static Device Discovery', () => {
+    test('should discover communication devices without connection', async() => {
+      // Mock serial port discovery
+      mockSerialPort.list.mockResolvedValue([
+        {
+          path: '/dev/tty.usbserial-FTAA0AS4',
+          manufacturer: 'FTDI',
+          vendorId: '0403',
+          productId: '6014'
+        },
+        {
+          path: '/dev/tty.usbserial-OTHER',
+          manufacturer: 'Other',
+          vendorId: '1234',
+          productId: '5678'
+        }
+      ]);
+
+      // Mock USB device discovery
+      mockUSB.getDeviceList.mockReturnValue([
+        {
+          deviceDescriptor: {
+            idVendor: 0x0403,
+            idProduct: 0x6014
+          }
+        }
+      ]);
+
+      const devices = await DynamixelController.discoverCommunicationDevices();
+
+      expect(devices).toHaveProperty('usb');
+      expect(devices).toHaveProperty('serial');
+      expect(devices).toHaveProperty('webserial');
+      expect(Array.isArray(devices.usb)).toBe(true);
+      expect(Array.isArray(devices.serial)).toBe(true);
+      expect(typeof devices.webserial).toBe('boolean');
+    });
+
+    test('should discover U2D2 devices specifically', async() => {
+      // Mock devices with U2D2 signature
+      mockSerialPort.list.mockResolvedValue([
+        {
+          path: '/dev/tty.usbserial-FTAA0AS4',
+          manufacturer: 'FTDI',
+          vendorId: '0403',
+          productId: '6014'
+        }
+      ]);
+
+      mockUSB.getDeviceList.mockReturnValue([
+        {
+          deviceDescriptor: {
+            idVendor: 0x0403,
+            idProduct: 0x6014
+          }
+        }
+      ]);
+
+      const u2d2Devices = await DynamixelController.discoverU2D2Devices();
+
+      expect(Array.isArray(u2d2Devices)).toBe(true);
+      expect(u2d2Devices.length).toBeGreaterThan(0);
+
+      // Check that returned devices have U2D2 characteristics
+      u2d2Devices.forEach(device => {
+        expect(device).toHaveProperty('recommended', true);
+        expect(device).toHaveProperty('type');
+        expect(['usb', 'serial'].includes(device.type)).toBe(true);
+      });
+    });
+
+    test('should handle errors in device discovery gracefully', async() => {
+      // Test that discovery handles errors and returns expected structure
+      // We won't mock everything to avoid complex setup - just verify structure
+      const devices = await DynamixelController.discoverCommunicationDevices();
+
+      // Should always return the expected structure, even with errors
+      expect(devices).toHaveProperty('usb');
+      expect(devices).toHaveProperty('serial');
+      expect(devices).toHaveProperty('webserial');
+      expect(Array.isArray(devices.usb)).toBe(true);
+      expect(Array.isArray(devices.serial)).toBe(true);
+      expect(typeof devices.webserial).toBe('boolean');
+    });
+
+    test('should list serial ports separately', async() => {
+      mockSerialPort.list.mockResolvedValue([
+        {
+          path: '/dev/tty.usbserial-FTAA0AS4',
+          manufacturer: 'FTDI',
+          vendorId: '0403',
+          productId: '6014'
+        }
+      ]);
+
+      const ports = await DynamixelController.listSerialPorts();
+
+      expect(Array.isArray(ports)).toBe(true);
+      if (ports.length > 0) {
+        expect(ports[0]).toHaveProperty('path');
+        expect(ports[0]).toHaveProperty('isU2D2');
+      }
     });
   });
 
@@ -175,6 +294,133 @@ describe('DynamixelController Integration', () => {
       await controller.disconnect();
 
       expect(controller.disconnect).toHaveBeenCalled();
+    });
+  });
+
+  describe('Separated Connection Workflow', () => {
+    test('should connect to specific USB device', async() => {
+      controller = new DynamixelController({ deferConnection: true });
+
+      const deviceInfo = {
+        type: 'usb',
+        vendorId: 0x0403,
+        productId: 0x6014,
+        name: 'U2D2 USB Device'
+      };
+
+      // Mock the connection creation and connection process
+      const mockConnection = {
+        connect: jest.fn().mockResolvedValue(true)
+      };
+
+      // Mock createConnection to return our mock connection
+      controller.createConnection = jest.fn(() => {
+        controller.connection = mockConnection;
+      });
+
+      const result = await controller.connectToDevice(deviceInfo);
+
+      expect(result).toBe(true);
+      expect(controller.createConnection).toHaveBeenCalled();
+      expect(mockConnection.connect).toHaveBeenCalled();
+    });
+
+    test('should connect to specific serial device', async() => {
+      controller = new DynamixelController({ deferConnection: true });
+
+      const deviceInfo = {
+        type: 'serial',
+        path: '/dev/tty.usbserial-FTAA0AS4',
+        manufacturer: 'FTDI',
+        name: 'U2D2 Serial Port'
+      };
+
+      // Mock the connection creation and connection process
+      const mockConnection = {
+        connect: jest.fn().mockResolvedValue(true)
+      };
+
+      controller.createConnection = jest.fn(() => {
+        controller.connection = mockConnection;
+      });
+
+      const result = await controller.connectToDevice(deviceInfo);
+
+      expect(result).toBe(true);
+      expect(controller.createConnection).toHaveBeenCalled();
+      expect(mockConnection.connect).toHaveBeenCalledWith('/dev/tty.usbserial-FTAA0AS4');
+    });
+
+    test('should handle connection failure in connectToDevice', async() => {
+      controller = new DynamixelController({ deferConnection: true });
+
+      const deviceInfo = {
+        type: 'usb',
+        vendorId: 0x0403,
+        productId: 0x6014
+      };
+
+      // Mock connection failure
+      const mockConnection = {
+        connect: jest.fn().mockResolvedValue(false)
+      };
+
+      controller.createConnection = jest.fn(() => {
+        controller.connection = mockConnection;
+      });
+
+      const result = await controller.connectToDevice(deviceInfo);
+
+      expect(result).toBe(false);
+    });
+
+    test('should handle connection error in connectToDevice', async() => {
+      controller = new DynamixelController({ deferConnection: true });
+
+      const deviceInfo = {
+        type: 'serial',
+        path: '/dev/nonexistent'
+      };
+
+      // Mock connection error
+      const mockConnection = {
+        connect: jest.fn().mockRejectedValue(new Error('Device not found'))
+      };
+
+      controller.createConnection = jest.fn(() => {
+        controller.connection = mockConnection;
+      });
+
+      // Mock error event
+      controller.emit = jest.fn();
+
+      const result = await controller.connectToDevice(deviceInfo);
+
+      expect(result).toBe(false);
+      expect(controller.emit).toHaveBeenCalledWith('error', expect.any(Error));
+    });
+
+    test('should reuse existing connection if already created', async() => {
+      // Create controller with existing connection (not deferred)
+      controller = new DynamixelController({ deferConnection: false });
+
+      const deviceInfo = {
+        type: 'usb',
+        vendorId: 0x0403,
+        productId: 0x6014
+      };
+
+      // Mock existing connection
+      const mockConnection = {
+        connect: jest.fn().mockResolvedValue(true)
+      };
+
+      controller.connection = mockConnection;
+
+      const result = await controller.connectToDevice(deviceInfo);
+
+      expect(result).toBe(true);
+      expect(mockConnection.connect).toHaveBeenCalled();
     });
   });
 

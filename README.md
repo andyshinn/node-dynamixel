@@ -13,6 +13,7 @@ A Node.js library for controlling DYNAMIXEL servo motors using Protocol 2.0 via 
 - ✅ **Cross-platform** support (Linux, macOS, Windows)
 - ✅ **Electron & Web Serial API** support for desktop applications
 - ✅ **Multiple Connection Types** (USB, Serial, Web Serial)
+- 🆕 **Separated Device Discovery** for better Electron app integration
 - 🆕 **Advanced Alarm Management** with intelligent thresholds and monitoring
 - 🆕 **Motor Profiles System** for optimal motor configurations
 - 🆕 **Enhanced Logging** with performance metrics and structured output
@@ -114,6 +115,36 @@ main().catch(console.error);
 ```
 
 **📋 For complete Electron setup instructions, see [Electron Setup Guide](./docs/electron-setup.md)**
+
+### Separated Device Discovery (for Electron Apps)
+
+For Electron applications, you can separate device discovery from motor discovery to provide better user experience:
+
+```javascript
+import { DynamixelController } from 'dynamixel';
+
+// Step 1: Discover available devices (no connection)
+const devices = await DynamixelController.discoverCommunicationDevices();
+console.log(`Found ${devices.usb.length} USB and ${devices.serial.length} serial devices`);
+
+// Step 2: Get U2D2-specific devices
+const u2d2Devices = await DynamixelController.discoverU2D2Devices();
+
+// Step 3: Create controller with deferred connection
+const controller = new DynamixelController({
+  deferConnection: true // Don't connect immediately
+});
+
+// Step 4: Connect to specific device (user selection)
+const selectedDevice = u2d2Devices[0]; // From UI selection
+await controller.connectToDevice(selectedDevice);
+
+// Step 5: Now discover motors
+const motors = await controller.quickDiscovery();
+console.log(`Found ${motors.length} motors`);
+```
+
+**📋 For complete separated discovery guide, see [Enhanced Features](./docs/enhanced-features.md#separated-device-discovery)**
 
 ## Architecture
 

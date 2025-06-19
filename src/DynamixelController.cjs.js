@@ -1,26 +1,13 @@
-import { EventEmitter } from 'events';
-import { U2D2Connection, SerialConnection, WebSerialConnection } from './transport/index.js';
-import { DynamixelDevice, Protocol2 } from './dynamixel/index.js';
-
-/**
- * @typedef {Object} DynamixelControllerOptions
- * @property {'usb'|'serial'|'webserial'|'auto'} [connectionType='auto'] - Connection type to use
- * @property {boolean} [deferConnection=false] - Whether to defer connection creation until connectToDevice is called
- * @property {number} [timeout=5000] - Connection timeout in milliseconds
- * @property {boolean} [debug=false] - Enable debug logging
- * @property {number} [baudRate=1000000] - Serial communication baud rate
- * @property {string} [portPath] - Specific port path for serial connections
- */
+const { EventEmitter } = require('events');
+const { U2D2Connection, SerialConnection, WebSerialConnection } = require('./transport/index.cjs.js');
+const { DynamixelDevice, Protocol2 } = require('./dynamixel/index.cjs.js');
 
 /**
  * Main DYNAMIXEL Controller
  * Manages connection and communication with DYNAMIXEL devices
  * Supports both USB and Serial connection methods
  */
-export class DynamixelController extends EventEmitter {
-  /**
-   * @param {DynamixelControllerOptions} [options={}] - Controller options
-   */
+class DynamixelController extends EventEmitter {
   constructor(options = {}) {
     super();
 
@@ -30,13 +17,7 @@ export class DynamixelController extends EventEmitter {
     this.devices = new Map(); // Map of ID -> DynamixelDevice
     this.isConnected = false;
 
-    // If deferConnection is true, don't create connection immediately
-    // This allows for device discovery before connecting to a specific device
-    this.deferConnection = options.deferConnection || false;
-
-    if (!this.deferConnection) {
-      this.createConnection(options);
-    }
+    this.createConnection(options);
   }
 
   /**
@@ -248,71 +229,64 @@ export class DynamixelController extends EventEmitter {
 
   /**
    * Ping a specific DYNAMIXEL device
-   * @param {number} id - DYNAMIXEL ID
+   * @param {number} id - Device ID (1-253)
    * @param {number} timeout - Timeout in milliseconds
-   * @returns {Promise<Object>} - Device information
+   * @returns {Promise<Object>} - Ping response with device info
    */
   async ping(id, timeout = null) {
-    if (!this.isConnected) {
-      throw new Error('Controller not connected. Call connect() first.');
+    if (!this.connection) {
+      throw new Error('No connection available');
     }
 
     return await this.connection.ping(id, timeout);
   }
 
   /**
-   * Discover all DYNAMIXEL devices on the bus
+   * Discover DYNAMIXEL devices on the bus
    * @param {Object} options - Discovery options
    * @returns {Promise<Array>} - Array of discovered devices
    */
   async discoverDevices(options = {}) {
-    if (!this.isConnected) {
-      throw new Error('Controller not connected. Call connect() first.');
-    }
-
     const devices = await this.connection.discoverDevices(options);
 
-    // Create DynamixelDevice instances for discovered devices
-    this.devices.clear();
-    for (const deviceInfo of devices) {
-      const device = new DynamixelDevice(deviceInfo.id, this.connection, deviceInfo);
-      this.devices.set(deviceInfo.id, device);
-    }
+    // Add discovered devices to our device map
+    devices.forEach(device => {
+      this.addDevice(device.id, device);
+    });
 
-    this.emit('discoveryComplete', devices);
     return devices;
   }
 
   /**
-   * Get a specific DYNAMIXEL device by ID
-   * @param {number} id - DYNAMIXEL ID
-   * @returns {DynamixelDevice|null} - Device instance or null if not found
+   * Get a device by ID
+   * @param {number} id - Device ID
+   * @returns {DynamixelDevice|null} - Device instance or null
    */
   getDevice(id) {
     return this.devices.get(id) || null;
   }
 
   /**
-   * Get all discovered devices
-   * @returns {Array<DynamixelDevice>} - Array of device instances
+   * Get all managed devices
+   * @returns {Array} - Array of device instances
    */
   getAllDevices() {
     return Array.from(this.devices.values());
   }
 
   /**
-   * Get device count
-   * @returns {number} - Number of discovered devices
+   * Get number of managed devices
+   * @returns {number} - Device count
    */
   getDeviceCount() {
     return this.devices.size;
   }
 
   /**
-   * Add a device manually (if you know its ID and info)
-   * @param {number} id - DYNAMIXEL ID
+   * Add a device to management
+   * @param {number} id - Device ID
    * @param {Object} deviceInfo - Device information
-   * @returns {DynamixelDevice} - Created device instance
+   * @returns {DynamixelDevice} - Device instance
    */
   addDevice(id, deviceInfo = {}) {
     const device = new DynamixelDevice(id, this.connection, deviceInfo);
@@ -321,19 +295,17 @@ export class DynamixelController extends EventEmitter {
   }
 
   /**
-   * Set the baud rate for communication
-   * @param {number} baudRate - Baud rate (e.g., 57600, 115200, 1000000)
+   * Set baud rate for connection
+   * @param {number} baudRate - New baud rate
    */
   setBaudRate(baudRate) {
     if (this.connection && this.connection.setBaudRate) {
       this.connection.setBaudRate(baudRate);
-    } else {
-      throw new Error('Connection does not support baud rate setting');
     }
   }
 
   /**
-   * Get the current baud rate
+   * Get current baud rate
    * @returns {number} - Current baud rate
    */
   getBaudRate() {
@@ -344,164 +316,118 @@ export class DynamixelController extends EventEmitter {
   }
 
   /**
-   * Remove a device from the controller
-   * @param {number} id - DYNAMIXEL ID
-   * @returns {boolean} - Success status
+   * Remove a device from management
+   * @param {number} id - Device ID
+   * @returns {boolean} - Success
    */
   removeDevice(id) {
     return this.devices.delete(id);
   }
 
   /**
-   * Check if controller is connected
-   * @returns {boolean} - Connection status
+   * Get connection status information
+   * @returns {Object} - Status information
    */
   getConnectionStatus() {
-    return this.isConnected;
+    return {
+      isConnected: this.isConnected,
+      connectionType: this.connectionType,
+      deviceCount: this.devices.size,
+      connection: this.connection ? this.connection.getConnectionStatus() : null
+    };
   }
 
   /**
-   * Get connection instance (for advanced usage)
-   * @returns {U2D2Connection} - Connection instance
+   * Get the underlying connection instance
+   * @returns {Object} - Connection instance
    */
   getConnection() {
     return this.connection;
   }
 
   /**
-   * Broadcast ping to all devices
-   * @param {number} timeout - Timeout in milliseconds
-   * @returns {Promise<Array>} - Array of responses
+   * Broadcast ping to find all devices quickly
+   * @param {number} timeout - Timeout for responses
+   * @returns {Promise<Array>} - Array of responding devices
    */
   async broadcastPing(timeout = 1000) {
-    if (!this.isConnected) {
-      throw new Error('Controller not connected. Call connect() first.');
-    }
-
-    // Note: Broadcast ping typically doesn't get responses due to collision
-    // This method is provided for completeness but discovery is preferred
-    const packet = Protocol2.createPingPacket(0xFE); // Broadcast ID
-    await this.connection.send(packet);
-
-    // Wait for any responses (may get multiple or none due to collision)
     return new Promise((resolve) => {
-      const responses = [];
-      const _timeoutHandle = setTimeout(() => {
-        this.connection.removeListener('packet', onPacket);
-        resolve(responses);
-      }, timeout);
+      const foundDevices = [];
 
+      // Listen for responses
       const onPacket = (packet) => {
-        const deviceInfo = Protocol2.parsePingResponse(packet);
-        if (deviceInfo) {
-          responses.push(deviceInfo);
+        try {
+          if (packet[0] === 0xFF && packet[1] === 0xFF && packet[2] === 0xFD) {
+            const response = Protocol2.parsePingResponse(packet);
+            if (response && !foundDevices.find(d => d.id === response.id)) {
+              foundDevices.push(response);
+            }
+          }
+        } catch (_error) {
+          // Ignore invalid packets
         }
       };
 
       this.connection.on('packet', onPacket);
+
+      // Send broadcast ping (ID 254)
+      const broadcastPacket = Protocol2.createPingPacket(254);
+      this.connection.send(broadcastPacket);
+
+      // Stop listening after timeout
+      setTimeout(() => {
+        this.connection.removeListener('packet', onPacket);
+        resolve(foundDevices);
+      }, timeout);
     });
   }
 
   /**
-   * Quick device discovery with progress reporting
-   * @param {Function} onProgress - Progress callback (current, total, id)
-   * @returns {Promise<Array>} - Array of discovered devices
+   * Quick device discovery (IDs 1-20)
+   * @param {Function} onProgress - Progress callback
+   * @returns {Promise<Array>} - Discovered devices
    */
   async quickDiscovery(onProgress = null) {
     return await this.discoverDevices({
-      startId: 1,
-      endId: 20, // Quick scan of first 20 IDs
-      timeout: 50,
-      onProgress
-    });
-  }
-
-  /**
-   * Full device discovery (all possible IDs)
-   * @param {Function} onProgress - Progress callback (current, total, id)
-   * @returns {Promise<Array>} - Array of discovered devices
-   */
-  async fullDiscovery(onProgress = null) {
-    return await this.discoverDevices({
-      startId: 1,
-      endId: 252,
+      range: 'quick',
       timeout: 100,
       onProgress
     });
   }
 
   /**
-   * Get device model name from model number
-   * @param {number} modelNumber - Model number from device
-   * @returns {string} - Model name or 'Unknown'
+   * Full device discovery (IDs 1-252)
+   * @param {Function} onProgress - Progress callback
+   * @returns {Promise<Array>} - Discovered devices
    */
-  static getModelName(modelNumber) {
-    // Common DYNAMIXEL model numbers
-    const models = {
-      12: 'AX-12A',
-      18: 'AX-18A',
-      24: 'RX-24F',
-      28: 'RX-28',
-      29: 'MX-28',
-      30: 'MX-28(2.0)',
-      54: 'MX-64',
-      55: 'MX-64(2.0)',
-      64: 'MX-106',
-      65: 'MX-106(2.0)',
-      107: 'EX-106+',
-      113: 'DX-113',
-      116: 'DX-116',
-      117: 'DX-117',
-      300: 'AX-12W',
-      320: 'XL-320',
-      1020: 'XL430-W250',
-      1060: 'XL330-M077',
-      1190: 'XL330-M288',
-      1200: 'XC430-W150',
-      1210: 'XC430-W240',
-      1230: 'XC430-T150BB',
-      1240: 'XC430-T240BB',
-      1270: 'XC330-T181',
-      1280: 'XC330-T288',
-      1290: 'XC330-M181',
-      1300: 'XC330-M288',
-      1130: 'XM430-W210',
-      1140: 'XM430-W350',
-      1150: 'XM540-W150',
-      1170: 'XM540-W270',
-      1050: 'XH430-W210',
-      1070: 'XH430-W350',
-      1090: 'XH430-V210',
-      1100: 'XH430-V350',
-      1110: 'XH540-W150',
-      1120: 'XH540-W270',
-      1010: 'XH540-V150',
-      1160: 'XH540-V270'
-    };
-
-    return models[modelNumber] || `Unknown (${modelNumber})`;
+  async fullDiscovery(onProgress = null) {
+    return await this.discoverDevices({
+      range: 'full',
+      timeout: 100,
+      onProgress
+    });
   }
 
   /**
    * @typedef {Object} CommunicationDevices
-   * @property {Array<Object>} usb - Array of USB devices
    * @property {Array<Object>} serial - Array of serial devices
+   * @property {Array<Object>} usb - Array of USB devices
    * @property {boolean} webserial - Whether Web Serial API is available
    */
 
   /**
-   * Discover available communication devices (USB and Serial)
-   * @returns {Promise<CommunicationDevices>} - Object containing USB and serial devices
+   * Discover available communication devices (Serial and USB)
+   * @returns {Promise<CommunicationDevices>} - Object containing serial and USB devices
    */
   static async discoverCommunicationDevices() {
     const result = {
-      usb: [],
       serial: [],
+      usb: [],
       webserial: WebSerialConnection.isSupported()
     };
 
     try {
-      // Discover Serial devices
+      // Discover Serial devices first (priority)
       result.serial = await SerialConnection.listSerialPorts();
       result.serial = result.serial.map(port => ({
         ...port,
@@ -536,7 +462,7 @@ export class DynamixelController extends EventEmitter {
     const devices = await this.discoverCommunicationDevices();
     const u2d2Devices = [];
 
-    // Add potential U2D2 serial devices (FTDI devices)
+    // Add potential U2D2 serial devices first (priority)
     devices.serial.filter(port => port.isU2D2).forEach(port => {
       u2d2Devices.push({
         ...port,
@@ -558,14 +484,6 @@ export class DynamixelController extends EventEmitter {
   }
 
   /**
-   * List available USB devices (for debugging)
-   * @returns {Array} - Array of USB device information
-   */
-  static listUSBDevices() {
-    return U2D2Connection.listUSBDevices();
-  }
-
-  /**
    * List available serial ports
    * @returns {Promise<Array>} - Array of serial port information
    */
@@ -574,18 +492,69 @@ export class DynamixelController extends EventEmitter {
   }
 
   /**
-   * Get system information and troubleshooting recommendations
-   * @returns {Object} - System information and recommendations
+   * Get model name from model number
+   * @param {number} modelNumber - Model number
+   * @returns {string} - Model name
+   */
+  static getModelName(modelNumber) {
+    const models = {
+      1020: 'XL320',
+      1060: 'XL430-W250',
+      1070: 'XL430-W250 (2.0)',
+      1080: 'XM430-W210',
+      1090: 'XM430-W350',
+      1120: 'XM540-W150',
+      1130: 'XM540-W270',
+      1190: 'XH430-W210',
+      1200: 'XH430-W350',
+      1210: 'XH430-V210',
+      1220: 'XH430-V350',
+      1230: 'XH540-W150',
+      1240: 'XH540-W270',
+      1250: 'XH540-V150',
+      1260: 'XH540-V270',
+      35071: 'PRO L42-10-S300-R',
+      35072: 'PRO L54-30-S500-R',
+      35073: 'PRO L54-30-S400-R',
+      35074: 'PRO L54-50-S500-R',
+      35075: 'PRO L54-50-S290-R',
+      37928: 'PRO+ H42-20-S300-R',
+      37929: 'PRO+ H54-100-S500-R',
+      37930: 'PRO+ H54-200-S500-R',
+      37931: 'PRO+ M42-10-S260-R',
+      37932: 'PRO+ M54-40-S250-R',
+      37933: 'PRO+ M54-60-S250-R',
+      42350: 'PH42-020-S300-R',
+      42351: 'PH54-100-S500-R',
+      42352: 'PH54-200-S500-R'
+    };
+
+    return models[modelNumber] || `Unknown Model (${modelNumber})`;
+  }
+
+  /**
+   * List USB devices (static method)
+   * @returns {Array} - USB device list
+   */
+  static listUSBDevices() {
+    return U2D2Connection.listUSBDevices();
+  }
+
+  /**
+   * Get system information (static method)
+   * @returns {Object} - System information
    */
   static getSystemInfo() {
     return U2D2Connection.getSystemInfo();
   }
 
   /**
-   * Perform comprehensive USB diagnostics
+   * Perform USB diagnostics (static method)
    * @returns {Object} - Diagnostic results
    */
   static performUSBDiagnostics() {
     return U2D2Connection.performUSBDiagnostics();
   }
 }
+
+module.exports = { DynamixelController };

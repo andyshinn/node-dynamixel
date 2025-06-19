@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2025-01-20
+
+### Added
+- **Separated Discovery Pattern** for Electron applications
+  - `discoverCommunicationDevices()` - Discover USB/Serial devices without connecting
+  - `discoverU2D2Devices()` - Find U2D2-compatible devices specifically
+  - `connectToDevice(device)` - Connect to user-selected device
+  - `deferConnection` option in DynamixelController constructor
+  - Example: `separated-discovery.js` demonstrating the complete workflow
+- **TypeScript Support**
+  - Complete TypeScript declaration files generation
+  - Proper type annotations for all public APIs
+  - `deferConnection` correctly typed as `boolean` (was `any`)
+  - JSDoc type definitions for better IDE support
+- **Build System Enhancements**
+  - Rollup configuration for ESM and CommonJS builds
+  - Automatic TypeScript declaration generation
+  - Support for both `import` and `require` usage patterns
+  - Proper package.json exports configuration
+- **Enhanced Examples**
+  - `electron-main-process.js` - Electron main process integration
+  - `electron-renderer.js` - Electron renderer process integration
+  - `electron-dynamixel-service.js` - Complete Electron service example
+  - `typescript-example.ts` - TypeScript usage demonstration
+  - `prioritize-serial.js` - Serial device prioritization example
+
+### Changed
+- **Device Discovery Priority**: Serial devices now properly prioritized over USB devices
+- **Improved Error Handling**: Better error messages and timeout handling
+- **Enhanced Motor Property Reading**: Motor model numbers and firmware versions now display correctly
+- **Test Reliability**: All 284 tests now pass consistently without hanging
+- **Protocol Buffer Processing**: Fixed infinite loop issues in packet processing
+- **Connection Stability**: Improved timeout handling and connection cleanup
+
+### Fixed
+- **Critical Motor Discovery Bug**: Fixed infinite loop in `processReceiveBuffer()` methods
+  - Changed condition from `packetLength === -1` to `packetLength === 0`
+  - Added buffer size limits (1KB max) to prevent memory issues
+  - Added maximum packets per processing call (10) to prevent infinite loops
+  - Applied to all transport classes: SerialConnection, U2D2Connection
+- **Motor Properties Null Issue**: Fixed motor properties showing as `null` values
+  - Root cause: `ping()` methods incorrectly parsing response buffers
+  - Fixed: Proper parsing of raw buffers before extracting ping information
+  - Now correctly displays: "Motor ID 1: XC430-W150 (Model: 1200), FW: 52"
+- **Test Hanging Issue**: Resolved Jest hanging on test completion
+  - Fixed USB device handle leaks by using mocked connections
+  - Fixed timeout handle leaks by clearing setTimeout properly
+  - All tests now exit cleanly with `--detectOpenHandles`
+- **DynamixelDevice Buffer Parsing**: Fixed raw response buffer handling
+  - `read()` and `write()` methods now properly parse status packets
+  - Added `Protocol2.parseStatusPacket()` calls before error checking
+  - Updated test mocks to return proper status packet buffers
+- **Missing CommonJS Methods**: Added missing discovery methods to CommonJS exports
+  - `discoverCommunicationDevices()`, `discoverU2D2Devices()`, `connectToDevice()`
+  - Fixed inconsistency between ESM and CommonJS module exports
+
+### Technical Improvements
+- **Robust Packet Processing**: Enhanced buffer processing with safety limits
+- **Memory Management**: Better cleanup of USB handles and timeouts
+- **Test Infrastructure**: Proper mock data generation for DYNAMIXEL Protocol 2.0
+- **Error Propagation**: Consistent error handling across transport layers
+- **Documentation**: Comprehensive examples for Electron integration patterns
+
+### Breaking Changes
+- None - All changes are backward compatible
+
+### Migration Guide
+- **For Electron apps**: Consider using the new separated discovery pattern for better UX
+- **For TypeScript users**: Update imports to get better type safety
+- **For CommonJS users**: No changes required, all new methods available
+
 ## [0.0.4] - 2025-06-15
 
 ### Added

@@ -31,6 +31,9 @@ jobs:
     - name: Run linting
       run: npm run lint
 
+    - name: Build project
+      run: npm run build
+
     - name: Run unit tests
       run: npm run test:unit
 
@@ -39,6 +42,12 @@ jobs:
 
     - name: Run all tests with coverage
       run: npm run test:coverage
+
+    - name: Check TypeScript definitions
+      run: |
+        # Verify TypeScript definitions are generated correctly
+        test -f dist/types/index.esm.d.ts
+        echo "TypeScript definitions generated successfully"
 
   build:
     runs-on: ubuntu-latest
@@ -57,5 +66,14 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Build project
+      run: npm run build
+
     - name: Check package can be packed
       run: npm pack --dry-run
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist-files
+        path: dist/

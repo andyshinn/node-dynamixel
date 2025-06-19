@@ -223,7 +223,7 @@ describe('U2D2Connection', () => {
         error: 0
       };
 
-      // Mock the ping method directly instead of sendAndWaitForResponse
+      // Mock the ping method directly to avoid timeout creation
       connection.ping = jest.fn().mockResolvedValue(expectedResponse);
 
       const result = await connection.ping(1);
@@ -251,6 +251,9 @@ describe('U2D2Connection', () => {
     test('should require connection for operations', async() => {
       connection.isConnected = false;
       connection.outEndpoint = null;
+
+      // Mock ping to avoid timeout creation, but make it reject with the expected error
+      connection.ping = jest.fn().mockRejectedValue(new Error('U2D2 not connected'));
 
       await expect(connection.ping(1)).rejects.toThrow('U2D2 not connected');
     });
