@@ -330,9 +330,23 @@ export class WebSerialConnection extends EventEmitter {
   }
 
   /**
+   * @typedef {Object} DeviceInfo
+   * @property {number} id - Device ID
+   * @property {number} modelNumber - Device model number
+   * @property {string} modelName - Device model name
+   * @property {number} firmwareVersion - Firmware version
+   */
+
+  /**
+   * @typedef {Object} WebSerialPortInfo
+   * @property {number} [usbVendorId] - USB vendor ID
+   * @property {number} [usbProductId] - USB product ID
+   */
+
+  /**
    * Discover all DYNAMIXEL devices on the bus
    * @param {Object} options - Discovery options
-   * @returns {Promise<Array>} - Array of discovered devices
+   * @returns {Promise<DeviceInfo[]>} - Array of discovered devices
    */
   async discoverDevices(options = {}) {
     const {
@@ -396,7 +410,7 @@ export class WebSerialConnection extends EventEmitter {
 
   /**
    * Get available serial ports (previously authorized)
-   * @returns {Promise<Array>} - Array of port info objects
+   * @returns {Promise<WebSerialPortInfo[]>} - Array of port info objects
    */
   static async getAvailablePorts() {
     if (typeof navigator === 'undefined' || !navigator.serial) {

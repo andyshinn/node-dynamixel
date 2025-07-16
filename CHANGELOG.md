@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2025-07-16
+
+### Added
+- **XC330-M288 Motor Profile** - Complete motor profile with specifications and control table
+  - Detailed specs: 0.93 N·m torque, 81 RPM, 3.7-6.0V operating range
+  - Full control table mapping with addresses, sizes, and access types
+  - Pre-configured operating modes and recommended profiles
+  - Conversion factors for position, velocity, current, voltage, and temperature
+- **Enhanced MotorProfiles API** - New utility methods for motor management
+  - `getModelNumber(modelName)` - Get model number for motor name
+  - `getModelByNumber(modelNumber)` - Find motor model by number
+  - `getOperatingModes(modelName)` - Get available operating modes
+  - `getDefaultSettings(modelName)` - Get factory default settings
+  - `getSpecs(modelName)` - Get motor specifications
+  - `getControlTable(modelName)` - Get complete control table
+  - `getConversions(modelName)` - Get unit conversion factors
+  - `hasFeature(modelName, feature)` - Check motor feature support
+  - `getModelNumbers()` - Get all model numbers as lookup map
+- **Enhanced Control Table Constants** - Extended protocol support
+  - Added `CURRENT_LIMIT`, `GOAL_CURRENT`, `STARTUP_CONFIGURATION`
+  - Added `PWM_SLOPE`, `BACKUP_READY` registers
+  - Added `MODEL_NUMBERS` constants for quick model identification
+- **New Example Applications** - Expanded development tools
+  - `debug-model-detection.js` - Motor model detection debugging
+  - `find-xl330.js` - XL330-specific device discovery
+  - `realtime-monitoring.js` - Real-time motor monitoring
+  - `xl330-realtime-monitoring.js` - XL330-specific monitoring
+  - `xl330-sensor-test.js` - XL330 sensor testing utilities
+
+### Changed
+- **Enhanced TypeScript Documentation** - Comprehensive API documentation
+  - Added TypeDoc definitions for `DeviceInfo[]`, `SerialPortInfo[]`, `USBDeviceInfo[]`
+  - Added `CommunicationDevice[]`, `SystemInfo`, `USBDiagnostics` types
+  - Improved return type documentation across all transport classes
+  - Better IDE support with detailed JSDoc comments
+- **Updated Field Naming** - Consistency improvements
+  - `PRESENT_LOAD` → `PRESENT_CURRENT` for better protocol alignment
+  - Enhanced control table field organization
+
+### Fixed
+- **Motor Model Identification** - Corrected model number assignments
+  - Fixed XC430-W150 model number (1070) 
+  - Added XL330-M288-T model (1200) for proper identification
+  - Improved motor discovery and model detection accuracy
+
+### Technical Improvements
+- **Enhanced Motor Profile System** - More comprehensive motor support
+- **Improved Documentation** - Better TypeScript/JSDoc integration
+- **Extended Protocol Support** - Additional control table registers
+- **Developer Tools** - New debugging and monitoring utilities
+
+### Breaking Changes
+- None - All changes are backward compatible
+
+### Migration Guide
+- **For XC330-M288 users**: New motor profile available with optimized settings
+- **For developers**: New MotorProfiles utility methods provide easier motor management
+- **For TypeScript users**: Enhanced type definitions improve development experience
+
 ## [0.0.5] - 2025-01-20
 
 ### Added

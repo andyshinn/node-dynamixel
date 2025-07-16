@@ -361,8 +361,9 @@ export class DynamixelDevice extends EventEmitter {
       320: 'XL-320',
       1020: 'XL430-W250',
       1060: 'XL330-M077',
+      1070: 'XC430-W150', // Corrected model number
       1190: 'XL330-M288',
-      1200: 'XC430-W150',
+      1200: 'XL330-M288-T', // Your actual motor
       1210: 'XC430-W240',
       1270: 'XC330-T181',
       1280: 'XC330-T288',

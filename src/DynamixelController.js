@@ -263,7 +263,7 @@ export class DynamixelController extends EventEmitter {
   /**
    * Discover all DYNAMIXEL devices on the bus
    * @param {Object} options - Discovery options
-   * @returns {Promise<Array>} - Array of discovered devices
+   * @returns {Promise<DeviceInfo[]>} - Array of discovered devices
    */
   async discoverDevices(options = {}) {
     if (!this.isConnected) {
@@ -371,7 +371,7 @@ export class DynamixelController extends EventEmitter {
   /**
    * Broadcast ping to all devices
    * @param {number} timeout - Timeout in milliseconds
-   * @returns {Promise<Array>} - Array of responses
+   * @returns {Promise<DeviceInfo[]>} - Array of responses
    */
   async broadcastPing(timeout = 1000) {
     if (!this.isConnected) {
@@ -405,7 +405,7 @@ export class DynamixelController extends EventEmitter {
   /**
    * Quick device discovery with progress reporting
    * @param {Function} onProgress - Progress callback (current, total, id)
-   * @returns {Promise<Array>} - Array of discovered devices
+   * @returns {Promise<DeviceInfo[]>} - Array of discovered devices
    */
   async quickDiscovery(onProgress = null) {
     return await this.discoverDevices({
@@ -419,7 +419,7 @@ export class DynamixelController extends EventEmitter {
   /**
    * Full device discovery (all possible IDs)
    * @param {Function} onProgress - Progress callback (current, total, id)
-   * @returns {Promise<Array>} - Array of discovered devices
+   * @returns {Promise<DeviceInfo[]>} - Array of discovered devices
    */
   async fullDiscovery(onProgress = null) {
     return await this.discoverDevices({
@@ -483,10 +483,67 @@ export class DynamixelController extends EventEmitter {
   }
 
   /**
+   * @typedef {Object} SerialPortInfo
+   * @property {string} path - Port path
+   * @property {string} [manufacturer] - Manufacturer name
+   * @property {string} [vendorId] - Vendor ID
+   * @property {string} [productId] - Product ID
+   * @property {string} [serialNumber] - Serial number
+   * @property {boolean} isU2D2 - Whether this is a U2D2 device
+   */
+
+  /**
+   * @typedef {Object} USBDeviceInfo
+   * @property {number} vendorId - USB vendor ID
+   * @property {number} productId - USB product ID
+   * @property {number} busNumber - USB bus number
+   * @property {number} deviceAddress - Device address on bus
+   * @property {boolean} isU2D2 - Whether this is a U2D2 device
+   */
+
+  /**
+   * @typedef {Object} CommunicationDevice
+   * @property {string} type - Device type ('serial' | 'usb')
+   * @property {string} name - Device display name
+   * @property {string} [path] - Port path (for serial devices)
+   * @property {number} [vendorId] - Vendor ID (for USB devices)
+   * @property {number} [productId] - Product ID (for USB devices)
+   * @property {boolean} isU2D2 - Whether this is a U2D2 device
+   * @property {boolean} [recommended] - Whether this device is recommended
+   */
+
+  /**
    * @typedef {Object} CommunicationDevices
-   * @property {Array<Object>} usb - Array of USB devices
-   * @property {Array<Object>} serial - Array of serial devices
+   * @property {USBDeviceInfo[]} usb - Array of USB devices
+   * @property {SerialPortInfo[]} serial - Array of serial devices
    * @property {boolean} webserial - Whether Web Serial API is available
+   */
+
+  /**
+   * @typedef {Object} SystemInfo
+   * @property {string} platform - Operating system platform
+   * @property {string} arch - System architecture
+   * @property {string} nodeVersion - Node.js version
+   * @property {boolean} usbAvailable - Whether USB module is available
+   * @property {string} usbVersion - USB module version info
+   */
+
+  /**
+   * @typedef {Object} USBDiagnostics
+   * @property {boolean} usbModuleAvailable - Whether USB module is available
+   * @property {USBDeviceInfo[]} u2d2Devices - Found U2D2 devices
+   * @property {USBDeviceInfo[]} allDevices - All USB devices
+   * @property {string[]} errors - Array of error messages
+   * @property {number} totalDevices - Total number of USB devices
+   * @property {SystemInfo} systemInfo - System information
+   */
+
+  /**
+   * @typedef {Object} DeviceInfo
+   * @property {number} id - Device ID
+   * @property {number} modelNumber - Device model number
+   * @property {string} modelName - Device model name
+   * @property {number} firmwareVersion - Firmware version
    */
 
   /**
@@ -530,7 +587,7 @@ export class DynamixelController extends EventEmitter {
 
   /**
    * Discover U2D2 devices specifically
-   * @returns {Promise<Array>} - Array of U2D2-compatible devices
+   * @returns {Promise<CommunicationDevice[]>} - Array of U2D2-compatible devices
    */
   static async discoverU2D2Devices() {
     const devices = await this.discoverCommunicationDevices();
@@ -559,7 +616,7 @@ export class DynamixelController extends EventEmitter {
 
   /**
    * List available USB devices (for debugging)
-   * @returns {Array} - Array of USB device information
+   * @returns {USBDeviceInfo[]} - Array of USB device information
    */
   static listUSBDevices() {
     return U2D2Connection.listUSBDevices();
@@ -567,7 +624,7 @@ export class DynamixelController extends EventEmitter {
 
   /**
    * List available serial ports
-   * @returns {Promise<Array>} - Array of serial port information
+   * @returns {Promise<SerialPortInfo[]>} - Array of serial port information
    */
   static async listSerialPorts() {
     return SerialConnection.listSerialPorts();
@@ -575,7 +632,7 @@ export class DynamixelController extends EventEmitter {
 
   /**
    * Get system information and troubleshooting recommendations
-   * @returns {Object} - System information and recommendations
+   * @returns {SystemInfo} - System information and recommendations
    */
   static getSystemInfo() {
     return U2D2Connection.getSystemInfo();
@@ -583,7 +640,7 @@ export class DynamixelController extends EventEmitter {
 
   /**
    * Perform comprehensive USB diagnostics
-   * @returns {Object} - Diagnostic results
+   * @returns {USBDiagnostics} - Diagnostic results
    */
   static performUSBDiagnostics() {
     return U2D2Connection.performUSBDiagnostics();

@@ -341,9 +341,17 @@ export class U2D2Connection extends EventEmitter {
   }
 
   /**
+   * @typedef {Object} DeviceInfo
+   * @property {number} id - Device ID
+   * @property {number} modelNumber - Device model number
+   * @property {string} modelName - Device model name
+   * @property {number} firmwareVersion - Firmware version
+   */
+
+  /**
    * Discover devices on the bus
    * @param {Object} options - Discovery options
-   * @returns {Promise<Array>} - Array of discovered devices
+   * @returns {Promise<DeviceInfo[]>} - Array of discovered devices
    */
   async discoverDevices(options = {}) {
     const { range = 'quick', timeout = 100, onProgress } = options;
@@ -395,8 +403,36 @@ export class U2D2Connection extends EventEmitter {
   }
 
   /**
+   * @typedef {Object} USBDeviceInfo
+   * @property {number} vendorId - USB vendor ID
+   * @property {number} productId - USB product ID
+   * @property {number} busNumber - USB bus number
+   * @property {number} deviceAddress - Device address on bus
+   * @property {boolean} isU2D2 - Whether this is a U2D2 device
+   */
+
+  /**
+   * @typedef {Object} SystemInfo
+   * @property {string} platform - Operating system platform
+   * @property {string} arch - System architecture
+   * @property {string} nodeVersion - Node.js version
+   * @property {boolean} usbAvailable - Whether USB module is available
+   * @property {string} usbVersion - USB module version info
+   */
+
+  /**
+   * @typedef {Object} USBDiagnostics
+   * @property {boolean} usbModuleAvailable - Whether USB module is available
+   * @property {USBDeviceInfo[]} u2d2Devices - Found U2D2 devices
+   * @property {USBDeviceInfo[]} allDevices - All USB devices
+   * @property {string[]} errors - Array of error messages
+   * @property {number} totalDevices - Total number of USB devices
+   * @property {SystemInfo} systemInfo - System information
+   */
+
+  /**
    * List available USB devices
-   * @returns {Array} - Array of USB devices
+   * @returns {USBDeviceInfo[]} - Array of USB devices
    */
   static listUSBDevices() {
     if (!usb) {
@@ -417,7 +453,7 @@ export class U2D2Connection extends EventEmitter {
 
   /**
    * Get system information
-   * @returns {Object} - System information
+   * @returns {SystemInfo} - System information
    */
   static getSystemInfo() {
     return {
@@ -431,7 +467,7 @@ export class U2D2Connection extends EventEmitter {
 
   /**
    * Perform USB diagnostics
-   * @returns {Object} - Diagnostic results
+   * @returns {USBDiagnostics} - Diagnostic results
    */
   static performUSBDiagnostics() {
     const results = {

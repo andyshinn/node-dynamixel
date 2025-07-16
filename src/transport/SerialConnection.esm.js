@@ -304,9 +304,17 @@ export class SerialConnection extends EventEmitter {
   }
 
   /**
+   * @typedef {Object} DeviceInfo
+   * @property {number} id - Device ID
+   * @property {number} modelNumber - Device model number
+   * @property {string} modelName - Device model name
+   * @property {number} firmwareVersion - Firmware version
+   */
+
+  /**
    * Discover devices on the bus
    * @param {Object} options - Discovery options
-   * @returns {Promise<Array>} - Array of discovered devices
+   * @returns {Promise<DeviceInfo[]>} - Array of discovered devices
    */
   async discoverDevices(options = {}) {
     const { range = 'quick', timeout = 100, onProgress } = options;
@@ -372,8 +380,18 @@ export class SerialConnection extends EventEmitter {
   }
 
   /**
+   * @typedef {Object} SerialPortInfo
+   * @property {string} path - Port path
+   * @property {string} [manufacturer] - Manufacturer name
+   * @property {string} [vendorId] - Vendor ID
+   * @property {string} [productId] - Product ID
+   * @property {string} [serialNumber] - Serial number
+   * @property {boolean} isU2D2 - Whether this is a U2D2 device
+   */
+
+  /**
    * List available serial ports
-   * @returns {Promise<Array>} - Array of available ports
+   * @returns {Promise<SerialPortInfo[]>} - Array of available ports
    */
   static async listSerialPorts() {
     if (!SerialPortList) {
