@@ -36,19 +36,7 @@ export const ERROR_FLAGS = {
   ACCESS_ERROR: 0x07
 };
 
-// Model Numbers - Quick lookup for model identification
-export const MODEL_NUMBERS = {
-  XL330_M288_T: 1200,
-  XC430_W150: 1070,
-  XC330_M288: 1300,
-  XC330_M181: 1290,
-  XC330_T288: 1280,
-  XC330_T181: 1270
-};
-
 // Common Control Table Addresses (varies by model)
-// For detailed control table information including size, access, ranges, etc.
-// use MotorProfiles.getProfile(modelName).controlTable
 export const CONTROL_TABLE = {
   MODEL_NUMBER: 0,
   MODEL_INFORMATION: 2,
@@ -66,15 +54,12 @@ export const CONTROL_TABLE = {
   MAX_VOLTAGE_LIMIT: 32,
   MIN_VOLTAGE_LIMIT: 34,
   PWM_LIMIT: 36,
-  CURRENT_LIMIT: 38,
   VELOCITY_LIMIT: 44,
   MAX_POSITION_LIMIT: 48,
   MIN_POSITION_LIMIT: 52,
   EXTERNAL_PORT_MODE_1: 56,
   EXTERNAL_PORT_MODE_2: 57,
   EXTERNAL_PORT_MODE_3: 58,
-  STARTUP_CONFIGURATION: 60,
-  PWM_SLOPE: 62,
   SHUTDOWN: 63,
   TORQUE_ENABLE: 64,
   LED: 65,
@@ -99,14 +84,13 @@ export const CONTROL_TABLE = {
   MOVING: 122,
   MOVING_STATUS: 123,
   PRESENT_PWM: 124,
-  PRESENT_CURRENT: 126,
+  PRESENT_LOAD: 126,
   PRESENT_VELOCITY: 128,
   PRESENT_POSITION: 132,
   VELOCITY_TRAJECTORY: 136,
   POSITION_TRAJECTORY: 140,
   PRESENT_INPUT_VOLTAGE: 144,
-  PRESENT_TEMPERATURE: 146,
-  BACKUP_READY: 147
+  PRESENT_TEMPERATURE: 146
 };
 
 // U2D2 USB Device Information
