@@ -10,7 +10,6 @@ import { DynamixelController } from '../index.js';
 
 const REFRESH_RATE = 100; // milliseconds (10 Hz) - slower for better reliability
 const CLEAR_SCREEN = '\x1Bc'; // Clear terminal screen
-const MOVE_CURSOR_UP = '\x1B[H'; // Move cursor to top
 const SENSOR_TIMEOUT = 2000; // 2 second timeout for sensor reads
 
 let monitoringActive = false;
@@ -93,7 +92,7 @@ function formatPosition(position, velocity) {
 async function safeRead(readFunction, fallbackValue = null) {
   try {
     return await readFunction();
-  } catch (error) {
+  } catch (_error) {
     return fallbackValue;
   }
 }
@@ -102,14 +101,6 @@ async function monitorDevice() {
   if (!device || !monitoringActive) return;
   
   try {
-    // Clear screen and display header
-    console.log(MOVE_CURSOR_UP);
-    console.log('🔄 DYNAMIXEL REAL-TIME MONITOR');
-    console.log('═'.repeat(60));
-    console.log(`📍 Motor ID: ${device.id} (${device.modelName || 'Unknown Model'})`);
-    console.log(`🔧 Torque: DISABLED (Manual Mode)`);
-    console.log('');
-    
     // Read sensors sequentially with individual error handling for better reliability
     const position = await safeRead(() => device.getPresentPosition());
     const velocity = await safeRead(() => device.getPresentVelocity());
@@ -117,6 +108,14 @@ async function monitorDevice() {
     const voltage = await safeRead(() => device.getPresentVoltage());
     const hardwareError = await safeRead(() => device.readByte(70)); // HARDWARE_ERROR_STATUS
     const moving = await safeRead(() => device.isMoving(), false);
+    
+    // Clear screen and display header AFTER sensor reads to prevent scrolling
+    console.log(CLEAR_SCREEN);
+    console.log('🔄 DYNAMIXEL REAL-TIME MONITOR');
+    console.log('═'.repeat(60));
+    console.log(`📍 Motor ID: ${device.id} (${device.modelName || 'Unknown Model'})`);
+    console.log(`🔧 Torque: DISABLED (Manual Mode)`);
+    console.log('');
     
     const health = {
       temperature,
@@ -181,10 +180,19 @@ async function monitorDevice() {
     
   } catch (error) {
     consecutiveErrors++;
-    console.log(MOVE_CURSOR_UP);
-    console.log('❌ Monitor error:', error.message);
+    console.log(CLEAR_SCREEN);
+    console.log('❌ DYNAMIXEL REAL-TIME MONITOR - ERROR');
+    console.log('═'.repeat(60));
+    console.log(`📍 Motor ID: ${device.id} (${device.modelName || 'Unknown Model'})`);
+    console.log(`❌ Monitor error: ${error.message}`);
     console.log(`   Consecutive errors: ${consecutiveErrors}`);
     console.log('   Continuing to retry...');
+    console.log('');
+    console.log('💡 Instructions:');
+    console.log('   • Check device connection');
+    console.log('   • Press Ctrl+C to stop monitoring');
+    console.log('');
+    console.log(`🕐 Last attempt: ${new Date().toLocaleTimeString()}`);
   }
 }
 
@@ -198,7 +206,7 @@ async function startMonitoring() {
   const monitorInterval = setInterval(monitorDevice, REFRESH_RATE);
   
   // Handle graceful shutdown
-  process.on('SIGINT', async () => {
+  process.on('SIGINT', async() => {
     console.log('\n\n🛑 Stopping monitor...');
     monitoringActive = false;
     clearInterval(monitorInterval);
