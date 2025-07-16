@@ -251,6 +251,28 @@ describe('DynamixelDevice', () => {
     });
   });
 
+  describe('Current Control', () => {
+    test('should set goal current', async() => {
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+
+      await device.setGoalCurrent(500);
+
+      expect(mockConnection.sendAndWaitForResponse).toHaveBeenCalled();
+    });
+
+    test('should get goal current', async() => {
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0xF4, 0x01]) // 500 in little-endian
+      );
+
+      const current = await device.getGoalCurrent();
+
+      expect(current).toBe(500);
+    });
+  });
+
   describe('Status Reading', () => {
     test('should read temperature', async() => {
       mockConnection.sendAndWaitForResponse.mockResolvedValue(
