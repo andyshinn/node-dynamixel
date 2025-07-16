@@ -8,46 +8,71 @@ import { DynamixelController } from '../index.js';
  * real-time position and health information while you manually turn the motor.
  */
 
-const REFRESH_RATE = 50; // milliseconds (20 Hz)
+const REFRESH_RATE = 100; // milliseconds (10 Hz) - slower for better reliability
 const CLEAR_SCREEN = '\x1Bc'; // Clear terminal screen
 const MOVE_CURSOR_UP = '\x1B[H'; // Move cursor to top
+const SENSOR_TIMEOUT = 2000; // 2 second timeout for sensor reads
 
 let monitoringActive = false;
 let device = null;
+let consecutiveErrors = 0;
+let lastSuccessfulRead = null;
 
 function formatHealth(health) {
   const status = [];
   
   // Temperature status
-  if (health.temperature > 70) {
-    status.push(`🔥 TEMP: ${health.temperature}°C (HIGH)`);
-  } else if (health.temperature > 50) {
-    status.push(`🟡 TEMP: ${health.temperature}°C (WARM)`);
+  if (health.temperature !== null) {
+    if (health.temperature > 70) {
+      status.push(`🔥 TEMP: ${health.temperature}°C (HIGH)`);
+    } else if (health.temperature > 50) {
+      status.push(`🟡 TEMP: ${health.temperature}°C (WARM)`);
+    } else {
+      status.push(`🟢 TEMP: ${health.temperature}°C`);
+    }
   } else {
-    status.push(`🟢 TEMP: ${health.temperature}°C`);
+    status.push(`❓ TEMP: Error reading`);
   }
   
   // Voltage status
-  const voltage = health.voltage * 0.1;
-  if (voltage < 11.0) {
-    status.push(`🔋 VOLT: ${voltage.toFixed(1)}V (LOW)`);
-  } else if (voltage > 14.0) {
-    status.push(`⚡ VOLT: ${voltage.toFixed(1)}V (HIGH)`);
+  if (health.voltage !== null) {
+    const voltage = health.voltage * 0.1;
+    if (voltage < 11.0) {
+      status.push(`🔋 VOLT: ${voltage.toFixed(1)}V (LOW)`);
+    } else if (voltage > 14.0) {
+      status.push(`⚡ VOLT: ${voltage.toFixed(1)}V (HIGH)`);
+    } else {
+      status.push(`🟢 VOLT: ${voltage.toFixed(1)}V`);
+    }
   } else {
-    status.push(`🟢 VOLT: ${voltage.toFixed(1)}V`);
+    status.push(`❓ VOLT: Error reading`);
   }
   
   // Hardware error status
-  if (health.hardwareError > 0) {
-    status.push(`❌ HW ERROR: 0x${health.hardwareError.toString(16).padStart(2, '0')}`);
+  if (health.hardwareError !== null) {
+    if (health.hardwareError > 0) {
+      status.push(`❌ HW ERROR: 0x${health.hardwareError.toString(16).padStart(2, '0')}`);
+    } else {
+      status.push(`✅ HW STATUS: OK`);
+    }
   } else {
-    status.push(`✅ HW STATUS: OK`);
+    status.push(`❓ HW STATUS: Error reading`);
   }
   
   return status;
 }
 
 function formatPosition(position, velocity) {
+  if (position === null || velocity === null) {
+    return {
+      degrees: 'Error',
+      rpm: 'Error',
+      gauge: '█'.repeat(20) + '░'.repeat(20),
+      rawPosition: position || 'Error',
+      rawVelocity: velocity || 'Error'
+    };
+  }
+  
   const degrees = ((position / 4095) * 360).toFixed(1);
   const rpm = (velocity * 0.229).toFixed(1);
   
@@ -65,19 +90,33 @@ function formatPosition(position, velocity) {
   };
 }
 
+async function safeRead(readFunction, fallbackValue = null) {
+  try {
+    return await readFunction();
+  } catch (error) {
+    return fallbackValue;
+  }
+}
+
 async function monitorDevice() {
   if (!device || !monitoringActive) return;
   
   try {
-    // Read all sensor data in parallel for better performance
-    const [position, velocity, temperature, voltage, hardwareError, moving] = await Promise.all([
-      device.getPresentPosition(),
-      device.getPresentVelocity(),
-      device.getPresentTemperature(),
-      device.getPresentVoltage(),
-      device.readByte(70), // HARDWARE_ERROR_STATUS
-      device.isMoving()
-    ]);
+    // Clear screen and display header
+    console.log(MOVE_CURSOR_UP);
+    console.log('🔄 DYNAMIXEL REAL-TIME MONITOR');
+    console.log('═'.repeat(60));
+    console.log(`📍 Motor ID: ${device.id} (${device.modelName || 'Unknown Model'})`);
+    console.log(`🔧 Torque: DISABLED (Manual Mode)`);
+    console.log('');
+    
+    // Read sensors sequentially with individual error handling for better reliability
+    const position = await safeRead(() => device.getPresentPosition());
+    const velocity = await safeRead(() => device.getPresentVelocity());
+    const temperature = await safeRead(() => device.getPresentTemperature());
+    const voltage = await safeRead(() => device.getPresentVoltage());
+    const hardwareError = await safeRead(() => device.readByte(70)); // HARDWARE_ERROR_STATUS
+    const moving = await safeRead(() => device.isMoving(), false);
     
     const health = {
       temperature,
@@ -89,13 +128,15 @@ async function monitorDevice() {
     const pos = formatPosition(position, velocity);
     const healthStatus = formatHealth(health);
     
-    // Clear screen and display real-time data
-    console.log(MOVE_CURSOR_UP);
-    console.log('🔄 DYNAMIXEL REAL-TIME MONITOR');
-    console.log('═'.repeat(60));
-    console.log(`📍 Motor ID: ${device.id} (${device.modelName || 'Unknown Model'})`);
-    console.log(`🔧 Torque: DISABLED (Manual Mode)`);
-    console.log('');
+    // Check if we got any successful reads
+    const hasValidData = position !== null || velocity !== null || temperature !== null;
+    
+    if (hasValidData) {
+      consecutiveErrors = 0;
+      lastSuccessfulRead = Date.now();
+    } else {
+      consecutiveErrors++;
+    }
     
     // Position display
     console.log('📐 POSITION & MOVEMENT:');
@@ -111,14 +152,39 @@ async function monitorDevice() {
     healthStatus.forEach(status => console.log(`   ${status}`));
     console.log('');
     
+    // Communication status
+    if (consecutiveErrors > 0) {
+      console.log('⚠️  COMMUNICATION STATUS:');
+      console.log(`   Consecutive errors: ${consecutiveErrors}`);
+      if (lastSuccessfulRead) {
+        const timeSince = Math.round((Date.now() - lastSuccessfulRead) / 1000);
+        console.log(`   Last successful read: ${timeSince}s ago`);
+      }
+      console.log('');
+    }
+    
     console.log('💡 Instructions:');
     console.log('   • Manually turn the motor to see position changes');
     console.log('   • Press Ctrl+C to stop monitoring');
     console.log('');
     console.log(`🕐 Last update: ${new Date().toLocaleTimeString()}`);
     
+    // If too many consecutive errors, suggest troubleshooting
+    if (consecutiveErrors > 10) {
+      console.log('');
+      console.log('🚨 TROUBLESHOOTING:');
+      console.log('   • Check power supply to motors');
+      console.log('   • Verify cable connections');
+      console.log('   • Try slower refresh rate');
+      console.log('   • Run: npm run diagnostics');
+    }
+    
   } catch (error) {
-    console.error('❌ Error reading sensor data:', error.message);
+    consecutiveErrors++;
+    console.log(MOVE_CURSOR_UP);
+    console.log('❌ Monitor error:', error.message);
+    console.log(`   Consecutive errors: ${consecutiveErrors}`);
+    console.log('   Continuing to retry...');
   }
 }
 
@@ -157,9 +223,9 @@ async function main() {
   console.log('This example will disable torque on the first discovered motor');
   console.log('and stream real-time position and health data.\n');
   
-  // Create controller
+  // Create controller with longer timeout for better reliability
   const controller = new DynamixelController({
-    timeout: 1000,
+    timeout: SENSOR_TIMEOUT,
     debug: false
   });
   
@@ -177,31 +243,41 @@ async function main() {
     console.log('🔌 Connecting to U2D2...');
     await controller.connect();
     
-    // Discover devices
-    console.log('🔍 Discovering DYNAMIXEL devices...');
-    const devices = await controller.quickDiscovery();
-    
-    if (devices.length === 0) {
-      console.log('❌ No DYNAMIXEL devices found!');
-      console.log('\nTroubleshooting:');
-      console.log('• Check power supply to motors');
-      console.log('• Verify correct baud rate (57600)');
-      console.log('• Ensure proper wiring');
-      console.log('• Try running: npm run diagnostics');
-      process.exit(1);
+    // Try to find device ID 1 first (most common setup)
+    console.log('🔍 Looking for device ID 1...');
+    try {
+      await controller.ping(1, SENSOR_TIMEOUT);
+      device = controller.getDevice(1);
+      console.log(`✅ Found device ID 1: ${device.modelName || 'Unknown Model'}`);
+    } catch (_error) {
+      console.log('⚠️  Device ID 1 not found, trying broader discovery...');
+      
+      // Fall back to full discovery if ID 1 not found
+      console.log('🔍 Discovering DYNAMIXEL devices...');
+      const devices = await controller.quickDiscovery();
+      
+      if (devices.length === 0) {
+        console.log('❌ No DYNAMIXEL devices found!');
+        console.log('\nTroubleshooting:');
+        console.log('• Check power supply to motors');
+        console.log('• Verify correct baud rate (57600)');
+        console.log('• Ensure proper wiring');
+        console.log('• Try running: npm run diagnostics');
+        process.exit(1);
+      }
+      
+      // Use first discovered device
+      const deviceInfo = devices[0];
+      device = controller.getDevice(deviceInfo.id);
+      
+      console.log(`✅ Found ${devices.length} device(s)`);
+      console.log(`🎯 Using device ID ${device.id}: ${device.modelName || 'Unknown Model'}`);
     }
-    
-    // Use first discovered device
-    const deviceInfo = devices[0];
-    device = controller.getDevice(deviceInfo.id);
-    
-    console.log(`✅ Found ${devices.length} device(s)`);
-    console.log(`🎯 Using device ID ${device.id}: ${device.modelName || 'Unknown Model'}`);
     
     // Test device communication
     console.log('📡 Testing device communication...');
-    await device.ping();
-    console.log('✅ Device communication OK');
+    const testPosition = await device.getPresentPosition();
+    console.log(`✅ Communication OK - Position: ${testPosition}`);
     
     // Check current torque status
     const currentTorque = await device.getTorqueEnable();
