@@ -282,6 +282,23 @@ export class DynamixelDevice extends EventEmitter {
   }
 
   /**
+   * Set goal current 
+   * @param {number} current - Goal current (0-max mA)
+   * @returns {Promise<boolean>} - Success status
+   */
+  async setGoalCurrent(current) {
+    return await this.writeWord(CONTROL_TABLE.GOAL_CURRENT, current);
+  }
+
+  /**
+   * Get goal current
+   * @returns {Promise<number>} - Current in mA 
+   */
+  async getGoalCurrent() {
+    return await this.readWord(CONTROL_TABLE.GOAL_CURRENT);
+  }
+
+  /**
    * Get present voltage
    * @returns {Promise<number>} - Voltage in 0.1V units
    */
@@ -361,9 +378,8 @@ export class DynamixelDevice extends EventEmitter {
       320: 'XL-320',
       1020: 'XL430-W250',
       1060: 'XL330-M077',
-      1070: 'XC430-W150', // Corrected model number
       1190: 'XL330-M288',
-      1200: 'XL330-M288-T', // Your actual motor
+      1200: 'XC430-W150',
       1210: 'XC430-W240',
       1270: 'XC330-T181',
       1280: 'XC330-T288',
