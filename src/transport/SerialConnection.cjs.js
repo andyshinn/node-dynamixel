@@ -53,6 +53,7 @@ export class SerialConnection extends EventEmitter {
     this.port = null;
     this.timeout = options.timeout || DEFAULT_TIMEOUT;
     this.baudRate = options.baudRate || 57600;
+    this.highWaterMark = options.highWaterMark !== undefined ? options.highWaterMark : 65536; // Default 64KB
     this.isConnected = false;
     this.receiveBuffer = Buffer.alloc(0);
     this.portPath = options.portPath || null;
@@ -88,7 +89,8 @@ export class SerialConnection extends EventEmitter {
         stopBits: 1,
         parity: 'none',
         flowControl: false,
-        autoOpen: false
+        autoOpen: false,
+        highWaterMark: this.highWaterMark
       });
 
       // Open the port
@@ -381,7 +383,8 @@ export class SerialConnection extends EventEmitter {
       connected: this.isConnected,
       type: 'serial',
       port: this.port ? this.port.path : null,
-      baudRate: this.baudRate
+      baudRate: this.baudRate,
+      highWaterMark: this.highWaterMark
     };
   }
 
