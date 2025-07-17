@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { Protocol2 } from './Protocol2.js';
-import { INSTRUCTIONS, CONTROL_TABLE } from './constants.js';
+import { INSTRUCTIONS, CONTROL_TABLE, INDIRECT_ADDRESS } from './constants.js';
 
 /**
  * Individual DYNAMIXEL Device
@@ -16,6 +16,9 @@ export class DynamixelDevice extends EventEmitter {
     this.firmwareVersion = deviceInfo.firmwareVersion || null;
     this.modelName = deviceInfo.modelName || null;
     this.lastError = null;
+
+    // Indirect addressing state
+    this.indirectMappings = new Map();
 
     // Determine model name if not provided
     if (!this.modelName && this.modelNumber) {
@@ -282,7 +285,7 @@ export class DynamixelDevice extends EventEmitter {
   }
 
   /**
-   * Set goal current 
+   * Set goal current
    * @param {number} current - Goal current (0-max mA)
    * @returns {Promise<boolean>} - Success status
    */
@@ -292,7 +295,7 @@ export class DynamixelDevice extends EventEmitter {
 
   /**
    * Get goal current
-   * @returns {Promise<number>} - Current in mA 
+   * @returns {Promise<number>} - Current in mA
    */
   async getGoalCurrent() {
     return await this.readWord(CONTROL_TABLE.GOAL_CURRENT);
@@ -440,5 +443,292 @@ export class DynamixelDevice extends EventEmitter {
    */
   voltageToVolts(voltageReading) {
     return voltageReading * 0.1;
+  }
+
+  // Indirect Addressing Methods
+
+  /**
+   * Generate standardized error messages for indirect addressing operations
+   * @param {string} type - Error type ('indexOutOfRange', 'indexNotMapped', 'invalidValue', 'targetOutOfRange')
+   * @param {Object} params - Parameters for the error message
+   * @returns {string} - Formatted error message
+   */
+  getIndirectAddressErrorMessage(type, params) {
+    const { index, value, targetAddress } = params;
+
+    switch (type) {
+      case 'indexOutOfRange':
+        return `Indirect address index ${index} out of range [0, ${INDIRECT_ADDRESS.MAX_ENTRIES - 1}]`;
+      case 'indexNotMapped':
+        return `Indirect address index ${index} not mapped`;
+      case 'invalidValue':
+        return `Invalid value ${value} for index ${index}. Must be 0-255.`;
+      case 'targetOutOfRange':
+        return `Target address ${targetAddress} out of valid range [${INDIRECT_ADDRESS.VALID_RANGE_MIN}, ${INDIRECT_ADDRESS.VALID_RANGE_MAX}]`;
+      default:
+        return `Unknown indirect address error: ${type}`;
+    }
+  }
+
+  /**
+   * Setup indirect address mapping
+   * Maps a control table address to an indirect address slot
+   * @param {number} index - Indirect address index (0-19)
+   * @param {number} targetAddress - Control table address to map
+   * @returns {Promise<boolean>} - Success status
+   */
+  async setupIndirectAddress(index, targetAddress) {
+    if (index < 0 || index >= INDIRECT_ADDRESS.MAX_ENTRIES) {
+      throw new Error(this.getIndirectAddressErrorMessage('indexOutOfRange', { index }));
+    }
+
+    if (targetAddress < INDIRECT_ADDRESS.VALID_RANGE_MIN || targetAddress > INDIRECT_ADDRESS.VALID_RANGE_MAX) {
+      throw new Error(this.getIndirectAddressErrorMessage('targetOutOfRange', { targetAddress }));
+    }
+
+    const indirectAddressAddr = INDIRECT_ADDRESS.BASE_ADDRESS + (index * INDIRECT_ADDRESS.ADDRESS_SIZE);
+    const success = await this.writeWord(indirectAddressAddr, targetAddress);
+
+    if (success) {
+      this.indirectMappings.set(index, targetAddress);
+    }
+
+    return success;
+  }
+
+  /**
+   * Write data through indirect addressing
+   * @param {number} index - Indirect address index
+   * @param {number} value - Value to write (1 byte)
+   * @returns {Promise<boolean>} - Success status
+   */
+  async writeIndirectData(index, value) {
+    if (index < 0 || index >= INDIRECT_ADDRESS.MAX_ENTRIES) {
+      throw new Error(this.getIndirectAddressErrorMessage('indexOutOfRange', { index }));
+    }
+
+    if (!this.indirectMappings.has(index)) {
+      throw new Error(this.getIndirectAddressErrorMessage('indexNotMapped', { index }));
+    }
+
+    const indirectDataAddr = INDIRECT_ADDRESS.DATA_BASE_ADDRESS + index;
+    return await this.writeByte(indirectDataAddr, value);
+  }
+
+  /**
+   * Read data through indirect addressing
+   * @param {number} index - Indirect address index
+   * @returns {Promise<number>} - Read value (1 byte)
+   */
+  async readIndirectData(index) {
+    if (index < 0 || index >= INDIRECT_ADDRESS.MAX_ENTRIES) {
+      throw new Error(this.getIndirectAddressErrorMessage('indexOutOfRange', { index }));
+    }
+
+    if (!this.indirectMappings.has(index)) {
+      throw new Error(this.getIndirectAddressErrorMessage('indexNotMapped', { index }));
+    }
+
+    const indirectDataAddr = INDIRECT_ADDRESS.DATA_BASE_ADDRESS + index;
+    return await this.readByte(indirectDataAddr);
+  }
+
+  /**
+   * Bulk read multiple indirect data addresses
+   * @param {number[]} indices - Array of indirect address indices
+   * @returns {Promise<Object>} - Map of index to value
+   */
+  async bulkReadIndirect(indices) {
+    if (!Array.isArray(indices) || indices.length === 0) {
+      throw new Error('Indices must be a non-empty array');
+    }
+
+    // Validate all indices
+    for (const index of indices) {
+      if (index < 0 || index >= INDIRECT_ADDRESS.MAX_ENTRIES) {
+        throw new Error(this.getIndirectAddressErrorMessage('indexOutOfRange', { index }));
+      }
+      if (!this.indirectMappings.has(index)) {
+        throw new Error(this.getIndirectAddressErrorMessage('indexNotMapped', { index }));
+      }
+    }
+
+    // Sort indices to ensure contiguous read if possible
+    const sortedIndices = [...indices].sort((a, b) => a - b);
+    const results = {};
+
+    // Check if indices are contiguous for optimized bulk read
+    let isContiguous = true;
+    for (let i = 1; i < sortedIndices.length; i++) {
+      if (sortedIndices[i] !== sortedIndices[i - 1] + 1) {
+        isContiguous = false;
+        break;
+      }
+    }
+
+    if (isContiguous && sortedIndices.length > 1) {
+      // Optimized contiguous read
+      const startAddr = INDIRECT_ADDRESS.DATA_BASE_ADDRESS + sortedIndices[0];
+      const length = sortedIndices.length;
+      const data = await this.read(startAddr, length);
+
+      for (let i = 0; i < sortedIndices.length; i++) {
+        results[sortedIndices[i]] = data[i];
+      }
+    } else {
+      // Individual reads for non-contiguous indices
+      for (const index of indices) {
+        results[index] = await this.readIndirectData(index);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Bulk write multiple indirect data addresses
+   * @param {Object} mappings - Object with index as key and value as data
+   * @returns {Promise<boolean>} - Success status
+   */
+  async bulkWriteIndirect(mappings) {
+    if (!mappings || typeof mappings !== 'object') {
+      throw new Error('Mappings must be an object');
+    }
+
+    const indices = Object.keys(mappings).map(Number);
+
+    if (indices.length === 0) {
+      return true;
+    }
+
+    // Validate all indices and values
+    for (const index of indices) {
+      if (index < 0 || index >= INDIRECT_ADDRESS.MAX_ENTRIES) {
+        throw new Error(this.getIndirectAddressErrorMessage('indexOutOfRange', { index }));
+      }
+      if (!this.indirectMappings.has(index)) {
+        throw new Error(this.getIndirectAddressErrorMessage('indexNotMapped', { index }));
+      }
+      if (typeof mappings[index] !== 'number' || mappings[index] < 0 || mappings[index] > 255) {
+        throw new Error(this.getIndirectAddressErrorMessage('invalidValue', { index, value: mappings[index] }));
+      }
+    }
+
+    // Sort indices for potential optimization
+    const sortedIndices = indices.sort((a, b) => a - b);
+
+    // Check if indices are contiguous for optimized bulk write
+    let isContiguous = true;
+    for (let i = 1; i < sortedIndices.length; i++) {
+      if (sortedIndices[i] !== sortedIndices[i - 1] + 1) {
+        isContiguous = false;
+        break;
+      }
+    }
+
+    if (isContiguous && sortedIndices.length > 1) {
+      // Optimized contiguous write
+      const startAddr = INDIRECT_ADDRESS.DATA_BASE_ADDRESS + sortedIndices[0];
+      const data = sortedIndices.map(index => mappings[index]);
+      return await this.write(startAddr, data);
+    } else {
+      // Individual writes for non-contiguous indices
+      for (const index of indices) {
+        const success = await this.writeIndirectData(index, mappings[index]);
+        if (!success) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+
+  /**
+   * Clear indirect mapping for a specific index
+   * @param {number} index - Indirect address index to clear
+   * @returns {Promise<boolean>} - Success status
+   */
+  async clearIndirectMapping(index) {
+    if (index < 0 || index >= INDIRECT_ADDRESS.MAX_ENTRIES) {
+      throw new Error(this.getIndirectAddressErrorMessage('indexOutOfRange', { index }));
+    }
+
+    const indirectAddressAddr = INDIRECT_ADDRESS.BASE_ADDRESS + (index * INDIRECT_ADDRESS.ADDRESS_SIZE);
+    const success = await this.writeWord(indirectAddressAddr, 0);
+
+    if (success) {
+      this.indirectMappings.delete(index);
+    }
+
+    return success;
+  }
+
+  /**
+   * Clear all indirect mappings
+   * @returns {Promise<boolean>} - Success status
+   */
+  async clearAllIndirectMappings() {
+    for (let i = 0; i < INDIRECT_ADDRESS.MAX_ENTRIES; i++) {
+      const success = await this.clearIndirectMapping(i);
+      if (!success) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Get current indirect address mappings
+   * @returns {Map} - Map of index to target address
+   */
+  getIndirectMappings() {
+    return new Map(this.indirectMappings);
+  }
+
+  /**
+   * Setup common indirect mappings for monitoring
+   * @returns {Promise<boolean>} - Success status
+   */
+  async setupCommonIndirectMappings() {
+    const mappings = [
+      { index: 0, address: CONTROL_TABLE.PRESENT_POSITION },
+      { index: 4, address: CONTROL_TABLE.PRESENT_VELOCITY },
+      { index: 8, address: CONTROL_TABLE.PRESENT_PWM },
+      { index: 10, address: CONTROL_TABLE.PRESENT_TEMPERATURE },
+      { index: 11, address: CONTROL_TABLE.MOVING }
+    ];
+
+    for (const mapping of mappings) {
+      const success = await this.setupIndirectAddress(mapping.index, mapping.address);
+      if (!success) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Read all common monitoring values through indirect addressing
+   * @returns {Promise<Object>} - Object containing position, velocity, pwm, temperature, moving
+   * @warning The returned values are incomplete for multi-byte fields:
+   *          - position: Only 1 byte of 4-byte value (use consecutive indirect mappings for full values)
+   *          - velocity: Only 1 byte of 4-byte value (use consecutive indirect mappings for full values)
+   *          - pwm: Only 1 byte of 2-byte value (use consecutive indirect mappings for full values)
+   *          For complete values, map consecutive indirect addresses to cover all bytes
+   */
+  async readCommonStatus() {
+    const indices = [0, 4, 8, 10, 11];
+    const data = await this.bulkReadIndirect(indices);
+
+    // Present position is 4 bytes, but we can only read 1 byte per indirect data
+    // For full 4-byte values, we need to map consecutive indirect addresses
+    return {
+      position: data[0], // This will only be 1 byte of the 4-byte position
+      velocity: data[4], // This will only be 1 byte of the 4-byte velocity
+      pwm: data[8],      // This will only be 1 byte of the 2-byte PWM
+      temperature: data[10],
+      moving: data[11]
+    };
   }
 }
