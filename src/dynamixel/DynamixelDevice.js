@@ -122,6 +122,14 @@ export class DynamixelDevice extends EventEmitter {
   }
 
   /**
+   * Get realtime tick
+   * @returns {Promise<number>} - timestamp in ms (rolls over at 32767)
+   */
+  async getRealtimeTick() {
+    return await this.readWord(CONTROL_TABLE.REALTIME_TICK);
+  }
+
+  /**
    * Read a 1-byte value from control table
    * @param {number} address - Control table address
    * @returns {Promise<number>} - 8-bit value
@@ -282,7 +290,7 @@ export class DynamixelDevice extends EventEmitter {
   }
 
   /**
-   * Set goal current 
+   * Set goal current
    * @param {number} current - Goal current (0-max mA)
    * @returns {Promise<boolean>} - Success status
    */
@@ -292,7 +300,7 @@ export class DynamixelDevice extends EventEmitter {
 
   /**
    * Get goal current
-   * @returns {Promise<number>} - Current in mA 
+   * @returns {Promise<number>} - Current in mA
    */
   async getGoalCurrent() {
     return await this.readWord(CONTROL_TABLE.GOAL_CURRENT);
