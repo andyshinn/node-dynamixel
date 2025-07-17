@@ -7,9 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2025-07-16
+## [0.1.0] - 2025-07-17
 
 ### Added
+- **Indirect Addressing Support** - Complete DYNAMIXEL indirect addressing functionality
+  - `setupIndirectAddress(index, targetAddress)` - Map control table addresses to indirect slots
+  - `writeIndirectData(index, value)` / `readIndirectData(index)` - Read/write through indirect addressing
+  - `bulkReadIndirect(indices)` / `bulkWriteIndirect(mappings)` - Optimized bulk operations with contiguous address detection
+  - `setupCommonIndirectMappings()` - Pre-configured mappings for common monitoring values
+  - `readCommonStatus()` - Read position, velocity, PWM, temperature, and moving status in one call
+  - `clearIndirectMapping(index)` / `clearAllIndirectMappings()` - Clean up indirect mappings
+  - Full validation with descriptive error messages for out-of-range indices and addresses
+  - Supports up to 20 indirect address mappings (addresses 168-207) with data at addresses 208-227
+  - Example usage: `realtime-timestamp-test.js` demonstrating high-speed monitoring capabilities
+- **Goal Current Control** - Current-based motor control methods
+  - `setGoalCurrent(current)` - Set target current in mA for precise torque control
+  - `getGoalCurrent()` - Read current goal current setting
+  - Enhanced control capabilities for applications requiring precise force/torque control
+- **Realtime Tick Support** - Hardware timestamp access for precise timing
+  - `getRealtimeTick()` - Read hardware timestamp counter (16-bit, rolls over at 32767)
+  - Enables precise timing measurements and synchronization between multiple motors
+  - Useful for real-time applications and performance monitoring
+- **Serial Buffer Configuration** - Configurable buffer sizes for performance optimization
+  - `highWaterMark` option in SerialConnection and DynamixelController constructors
+  - Default 64KB buffer size, configurable from 0 to 1MB+ for different use cases
+  - Optimizes memory usage and performance for high-speed applications
+  - Examples: `serial-buffer-options.js` showing different buffer configurations
+- **Enhanced Development Tools** - New example applications
+  - `realtime-timestamp-test.js` - Demonstrates indirect addressing and realtime tick usage
+  - `serial-buffer-options.js` - Shows different buffer size configurations for performance tuning
 - **XC330-M288 Motor Profile** - Complete motor profile with specifications and control table
   - Detailed specs: 0.93 N·m torque, 81 RPM, 3.7-6.0V operating range
   - Full control table mapping with addresses, sizes, and access types
@@ -29,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `CURRENT_LIMIT`, `GOAL_CURRENT`, `STARTUP_CONFIGURATION`
   - Added `PWM_SLOPE`, `BACKUP_READY` registers
   - Added `MODEL_NUMBERS` constants for quick model identification
+  - Added `INDIRECT_ADDRESS` constants for indirect addressing support
 - **New Example Applications** - Expanded development tools
   - `debug-model-detection.js` - Motor model detection debugging
   - `find-xl330.js` - XL330-specific device discovery
@@ -53,15 +80,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improved motor discovery and model detection accuracy
 
 ### Technical Improvements
-- **Enhanced Motor Profile System** - More comprehensive motor support
-- **Improved Documentation** - Better TypeScript/JSDoc integration
-- **Extended Protocol Support** - Additional control table registers
-- **Developer Tools** - New debugging and monitoring utilities
+- **Advanced Protocol Support** - Full indirect addressing implementation following DYNAMIXEL Protocol 2.0
+- **Performance Optimization** - Configurable buffer sizes and contiguous bulk operations
+- **Enhanced Motor Profile System** - More comprehensive motor support with current control
+- **Real-time Capabilities** - Hardware timestamp access for precise timing applications
+- **Improved Documentation** - Better TypeScript/JSDoc integration with new API methods
+- **Extended Protocol Support** - Additional control table registers and indirect addressing constants
+- **Developer Tools** - New debugging and monitoring utilities with practical examples
 
 ### Breaking Changes
 - None - All changes are backward compatible
 
 ### Migration Guide
+- **For high-performance applications**: Use indirect addressing for efficient bulk operations and reduced communication overhead
+- **For precise control applications**: Utilize `setGoalCurrent()` and `getGoalCurrent()` for current-based torque control
+- **For real-time applications**: Use `getRealtimeTick()` for hardware-level timing synchronization
+- **For buffer optimization**: Configure `highWaterMark` option based on your application's memory and performance requirements
 - **For XC330-M288 users**: New motor profile available with optimized settings
 - **For developers**: New MotorProfiles utility methods provide easier motor management
 - **For TypeScript users**: Enhanced type definitions improve development experience
