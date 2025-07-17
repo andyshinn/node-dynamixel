@@ -10,6 +10,7 @@ import { DynamixelDevice, Protocol2 } from './dynamixel/index.js';
  * @property {boolean} [debug=false] - Enable debug logging
  * @property {number} [baudRate=1000000] - Serial communication baud rate
  * @property {string} [portPath] - Specific port path for serial connections
+ * @property {number} [highWaterMark=65536] - SerialPort buffer size in bytes (default 64KB)
  */
 
 /**

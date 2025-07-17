@@ -293,6 +293,16 @@ describe('DynamixelDevice', () => {
 
       expect(voltage).toBe(120);
     });
+
+    test('should read realtime tick', async() => {
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x34, 0x12]) // 4660 in little-endian (0x1234)
+      );
+
+      const tick = await device.getRealtimeTick();
+
+      expect(tick).toBe(4660);
+    });
   });
 
   describe('LED Control', () => {
