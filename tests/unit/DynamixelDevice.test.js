@@ -415,4 +415,274 @@ describe('DynamixelDevice', () => {
       expect(info.modelNumber).toBeNull();
     });
   });
+
+  describe('Indirect Addressing', () => {
+    test('should setup indirect address mapping', async() => {
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+
+      const result = await device.setupIndirectAddress(0, 132); // Present position address
+      
+      expect(result).toBe(true);
+      expect(device.indirectMappings.has(0)).toBe(true);
+      expect(device.indirectMappings.get(0)).toBe(132);
+    });
+
+    test('should reject invalid indirect address index', async() => {
+      await expect(device.setupIndirectAddress(-1, 132)).rejects.toThrow('Indirect address index -1 out of range');
+      await expect(device.setupIndirectAddress(20, 132)).rejects.toThrow('Indirect address index 20 out of range');
+    });
+
+    test('should reject invalid target address', async() => {
+      await expect(device.setupIndirectAddress(0, 50)).rejects.toThrow('Target address 50 out of valid range');
+      await expect(device.setupIndirectAddress(0, 300)).rejects.toThrow('Target address 300 out of valid range');
+    });
+
+    test('should write data through indirect addressing', async() => {
+      // First setup mapping
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132);
+
+      // Then write data
+      const result = await device.writeIndirectData(0, 0x42);
+      
+      expect(result).toBe(true);
+    });
+
+    test('should read data through indirect addressing', async() => {
+      // First setup mapping
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132);
+
+      // Then read data
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x42])
+      );
+      
+      const value = await device.readIndirectData(0);
+      
+      expect(value).toBe(0x42);
+    });
+
+    test('should reject indirect operations without mapping', async() => {
+      await expect(device.writeIndirectData(0, 0x42)).rejects.toThrow('Indirect address index 0 not mapped');
+      await expect(device.readIndirectData(0)).rejects.toThrow('Indirect address index 0 not mapped');
+    });
+
+    test('should bulk read contiguous indirect addresses', async() => {
+      // Setup mappings
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132); // Present position
+      await device.setupIndirectAddress(1, 146); // Temperature
+      await device.setupIndirectAddress(2, 122); // Moving
+
+      // Mock bulk read response
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [0x01, 0x23, 0x00]) // 3 bytes of data
+      );
+
+      const results = await device.bulkReadIndirect([0, 1, 2]);
+      
+      expect(results[0]).toBe(0x01);
+      expect(results[1]).toBe(0x23);
+      expect(results[2]).toBe(0x00);
+    });
+
+    test('should bulk read non-contiguous indirect addresses', async() => {
+      // Setup mappings
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132);
+      await device.setupIndirectAddress(5, 146);
+
+      // Reset mock and setup individual read responses for non-contiguous reads
+      mockConnection.sendAndWaitForResponse.mockReset();
+      mockConnection.sendAndWaitForResponse
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x01]))  // Read for index 0
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x23])); // Read for index 5
+
+      const results = await device.bulkReadIndirect([0, 5]);
+      
+      expect(results[0]).toBe(0x01);
+      expect(results[5]).toBe(0x23);
+    });
+
+    test('should bulk read LED, Goal Current, and Velocity Trajectory (contiguous indirect)', async() => {
+      // Setup mappings for LED (65), Goal Current (102), Velocity Trajectory (136)
+      // Map to contiguous indirect indices for efficient single bulk read
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 65);  // LED
+      await device.setupIndirectAddress(1, 102); // Goal Current (byte 0)
+      await device.setupIndirectAddress(2, 103); // Goal Current (byte 1)
+      await device.setupIndirectAddress(3, 136); // Velocity Trajectory (byte 0)
+      await device.setupIndirectAddress(4, 137); // Velocity Trajectory (byte 1)
+      await device.setupIndirectAddress(5, 138); // Velocity Trajectory (byte 2)
+      await device.setupIndirectAddress(6, 139); // Velocity Trajectory (byte 3)
+
+      // Reset mock and setup single contiguous bulk read response
+      mockConnection.sendAndWaitForResponse.mockReset();
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [
+          0x01,  // LED on
+          0x64,  // Goal Current low byte (100)
+          0x00,  // Goal Current high byte
+          0x32,  // Velocity Trajectory byte 0 (50)
+          0x00,  // Velocity Trajectory byte 1
+          0x00,  // Velocity Trajectory byte 2
+          0x00   // Velocity Trajectory byte 3
+        ])
+      );
+
+      const results = await device.bulkReadIndirect([0, 1, 2, 3, 4, 5, 6]);
+      
+      // Verify LED status
+      expect(results[0]).toBe(0x01); // LED on
+      
+      // Verify Goal Current (2-byte little-endian: 0x64 + 0x00 = 100)
+      const goalCurrent = results[1] | (results[2] << 8);
+      expect(goalCurrent).toBe(100);
+      
+      // Verify Velocity Trajectory (4-byte little-endian: 0x32 + 0x00 + 0x00 + 0x00 = 50)
+      const velocityTrajectory = results[3] | (results[4] << 8) | (results[5] << 16) | (results[6] << 24);
+      expect(velocityTrajectory).toBe(50);
+    });
+
+    test('should bulk write contiguous indirect addresses', async() => {
+      // Setup mappings
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 100); // Goal PWM
+      await device.setupIndirectAddress(1, 101);
+
+      const result = await device.bulkWriteIndirect({ 0: 0x10, 1: 0x20 });
+      
+      expect(result).toBe(true);
+    });
+
+    test('should clear indirect mapping', async() => {
+      // Setup mapping first
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132);
+      expect(device.indirectMappings.has(0)).toBe(true);
+
+      // Clear mapping
+      const result = await device.clearIndirectMapping(0);
+      
+      expect(result).toBe(true);
+      expect(device.indirectMappings.has(0)).toBe(false);
+    });
+
+    test('should clear all indirect mappings', async() => {
+      // Setup multiple mappings
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132);
+      await device.setupIndirectAddress(1, 146);
+      expect(device.indirectMappings.size).toBe(2);
+
+      // Clear all mappings - mock 20 responses for clearing all slots
+      for (let i = 0; i < 20; i++) {
+        mockConnection.sendAndWaitForResponse.mockResolvedValue(
+          createStatusPacketBuffer(1, 0, [])
+        );
+      }
+
+      const result = await device.clearAllIndirectMappings();
+      
+      expect(result).toBe(true);
+      expect(device.indirectMappings.size).toBe(0);
+    });
+
+    test('should get indirect mappings copy', () => {
+      device.indirectMappings.set(0, 132);
+      device.indirectMappings.set(1, 146);
+
+      const mappings = device.getIndirectMappings();
+      
+      expect(mappings.size).toBe(2);
+      expect(mappings.get(0)).toBe(132);
+      expect(mappings.get(1)).toBe(146);
+      
+      // Verify it's a copy, not the original
+      expect(mappings).not.toBe(device.indirectMappings);
+    });
+
+    test('should setup common indirect mappings', async() => {
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+
+      const result = await device.setupCommonIndirectMappings();
+      
+      expect(result).toBe(true);
+      expect(device.indirectMappings.size).toBe(5);
+      expect(device.indirectMappings.get(0)).toBe(132); // Present position
+      expect(device.indirectMappings.get(4)).toBe(128); // Present velocity
+      expect(device.indirectMappings.get(8)).toBe(124); // Present PWM
+      expect(device.indirectMappings.get(10)).toBe(146); // Temperature
+      expect(device.indirectMappings.get(11)).toBe(122); // Moving
+    });
+
+    test('should read common status through indirect addressing', async() => {
+      // Setup mappings first
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupCommonIndirectMappings();
+
+      // Reset mock and setup individual read responses for non-contiguous indices [0, 4, 8, 10, 11]
+      mockConnection.sendAndWaitForResponse.mockReset();
+      mockConnection.sendAndWaitForResponse
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x10]))  // index 0 - position
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x20]))  // index 4 - velocity
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x30]))  // index 8 - pwm
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x25]))  // index 10 - temperature
+        .mockResolvedValueOnce(createStatusPacketBuffer(1, 0, [0x01])); // index 11 - moving
+
+      const status = await device.readCommonStatus();
+      
+      expect(status.position).toBe(0x10);
+      expect(status.velocity).toBe(0x20);
+      expect(status.pwm).toBe(0x30);
+      expect(status.temperature).toBe(0x25);
+      expect(status.moving).toBe(0x01);
+    });
+
+    test('should validate bulk write mappings object', async() => {
+      await expect(device.bulkWriteIndirect(null)).rejects.toThrow('Mappings must be an object');
+      await expect(device.bulkWriteIndirect('invalid')).rejects.toThrow('Mappings must be an object');
+    });
+
+    test('should validate bulk write values', async() => {
+      // Setup mapping
+      mockConnection.sendAndWaitForResponse.mockResolvedValue(
+        createStatusPacketBuffer(1, 0, [])
+      );
+      await device.setupIndirectAddress(0, 132);
+
+      await expect(device.bulkWriteIndirect({ 0: -1 })).rejects.toThrow('Invalid value -1 for index 0');
+      await expect(device.bulkWriteIndirect({ 0: 256 })).rejects.toThrow('Invalid value 256 for index 0');
+      await expect(device.bulkWriteIndirect({ 0: 'invalid' })).rejects.toThrow('Invalid value invalid for index 0');
+    });
+
+    test('should validate bulk read indices array', async() => {
+      await expect(device.bulkReadIndirect(null)).rejects.toThrow('Indices must be a non-empty array');
+      await expect(device.bulkReadIndirect([])).rejects.toThrow('Indices must be a non-empty array');
+      await expect(device.bulkReadIndirect('invalid')).rejects.toThrow('Indices must be a non-empty array');
+    });
+  });
 });

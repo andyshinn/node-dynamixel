@@ -100,6 +100,17 @@ export const U2D2_DEVICE = {
   INTERFACE: 0
 };
 
+// Indirect Address Constants
+export const INDIRECT_ADDRESS = {
+  BASE_ADDRESS: 168,        // Starting address for indirect addresses
+  DATA_BASE_ADDRESS: 208,   // Starting address for indirect data
+  MAX_ENTRIES: 20,          // Maximum number of indirect mappings
+  ADDRESS_SIZE: 2,          // Each indirect address entry is 2 bytes
+  DATA_SIZE: 1,             // Each indirect data entry is 1 byte
+  VALID_RANGE_MIN: 64,      // Minimum valid address for indirect mapping
+  VALID_RANGE_MAX: 227      // Maximum valid address for indirect mapping
+};
+
 // Default timeouts and settings
 export const DEFAULT_TIMEOUT = 1000; // milliseconds
 export const DEFAULT_BAUD_RATE = 57600;
