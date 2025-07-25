@@ -345,8 +345,14 @@ export class Protocol2 {
       }
     }
 
-    // Parameter format for SYNC_WRITE:
-    // Start Address (2 bytes) + Data Length (2 bytes) + [ID1 + DATA1 + ID2 + DATA2 + ... + IDN + DATAN]
+    // Parameter format for SYNC_WRITE (following ROBOTIS Protocol 2.0 specification):
+    // Packet: HEADER(4) + ID(1) + LENGTH(2) + INSTRUCTION(1) + PARAMETERS(...) + CRC(2)
+    // Parameters: START_ADDR_L + START_ADDR_H + DATA_LEN_L + DATA_LEN_H + [ID1 + DATA1 + ID2 + DATA2 + ... + IDN + DATAN]
+    // 
+    // This matches Python SDK's syncWriteTxOnly implementation:
+    // - data_length: number of bytes to write to each device
+    // - param: contains ID+DATA pairs for all devices
+    // - Each device contributes: 1 byte (ID) + data_length bytes (DATA)
     const parameters = [
       startAddress & 0xFF,         // Start address low byte
       (startAddress >> 8) & 0xFF,  // Start address high byte

@@ -1,5 +1,5 @@
 import { DynamixelDevice } from '../../src/dynamixel/DynamixelDevice.js';
-import { CONTROL_TABLE, getControlTableItem } from '../../src/dynamixel/constants.js';
+import { getControlTableItem } from '../../src/dynamixel/constants.js';
 
 // Mock connection for testing
 class MockConnection {
@@ -37,7 +37,7 @@ describe('Indirect Addressing', () => {
     test('should get control table item by name', () => {
       const item = getControlTableItem('PRESENT_POSITION');
       expect(item).toEqual({
-        address: CONTROL_TABLE.PRESENT_POSITION,
+        address: 132,
         size: 4
       });
     });

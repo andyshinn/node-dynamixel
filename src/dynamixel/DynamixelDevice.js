@@ -701,11 +701,11 @@ export class DynamixelDevice extends EventEmitter {
    */
   async setupCommonIndirectMappings() {
     const mappings = [
-      { index: 0, address: CONTROL_TABLE.PRESENT_POSITION },
-      { index: 4, address: CONTROL_TABLE.PRESENT_VELOCITY },
-      { index: 8, address: CONTROL_TABLE.PRESENT_PWM },
-      { index: 10, address: CONTROL_TABLE.PRESENT_TEMPERATURE },
-      { index: 11, address: CONTROL_TABLE.MOVING }
+      { index: 0, address: CONTROL_TABLE.PRESENT_POSITION.address },
+      { index: 4, address: CONTROL_TABLE.PRESENT_VELOCITY.address },
+      { index: 8, address: CONTROL_TABLE.PRESENT_PWM.address },
+      { index: 10, address: CONTROL_TABLE.PRESENT_TEMPERATURE.address },
+      { index: 11, address: CONTROL_TABLE.MOVING.address }
     ];
 
     for (const mapping of mappings) {
