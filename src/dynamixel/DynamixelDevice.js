@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { Protocol2 } from './Protocol2.js';
-import { INSTRUCTIONS, CONTROL_TABLE, INDIRECT_ADDRESS } from './constants.js';
+import { INSTRUCTIONS, CONTROL_TABLE, INDIRECT_ADDRESS, getControlTableItem } from './constants.js';
 
 /**
  * Individual DYNAMIXEL Device
@@ -19,6 +19,8 @@ export class DynamixelDevice extends EventEmitter {
 
     // Indirect addressing state
     this.indirectMappings = new Map();
+    this.indirectReadBlock = null;
+    this.indirectWriteBlocks = new Map();
 
     // Determine model name if not provided
     if (!this.modelName && this.modelNumber) {
@@ -699,11 +701,11 @@ export class DynamixelDevice extends EventEmitter {
    */
   async setupCommonIndirectMappings() {
     const mappings = [
-      { index: 0, address: CONTROL_TABLE.PRESENT_POSITION },
-      { index: 4, address: CONTROL_TABLE.PRESENT_VELOCITY },
-      { index: 8, address: CONTROL_TABLE.PRESENT_PWM },
-      { index: 10, address: CONTROL_TABLE.PRESENT_TEMPERATURE },
-      { index: 11, address: CONTROL_TABLE.MOVING }
+      { index: 0, address: CONTROL_TABLE.PRESENT_POSITION.address },
+      { index: 4, address: CONTROL_TABLE.PRESENT_VELOCITY.address },
+      { index: 8, address: CONTROL_TABLE.PRESENT_PWM.address },
+      { index: 10, address: CONTROL_TABLE.PRESENT_TEMPERATURE.address },
+      { index: 11, address: CONTROL_TABLE.MOVING.address }
     ];
 
     for (const mapping of mappings) {
@@ -738,5 +740,476 @@ export class DynamixelDevice extends EventEmitter {
       temperature: data[10],
       moving: data[11]
     };
+  }
+
+  // Enhanced Indirect Addressing Methods
+
+  /**
+   * Setup indirect READ block with control table items
+   * Automatically calculates contiguous sections and maps addresses
+   * @param {Array<string>} controlTableItems - Array of control table item names
+   * @returns {Promise<Object>} - Block configuration with startIndex, totalSize, and itemMap
+   */
+  async setupIndirectReadBlock(controlTableItems) {
+    if (!Array.isArray(controlTableItems) || controlTableItems.length === 0) {
+      throw new Error('controlTableItems must be a non-empty array');
+    }
+
+    // Clear existing read block if any
+    if (this.indirectReadBlock) {
+      await this.clearIndirectReadBlock();
+    }
+
+    // Get control table information for each item
+    const items = [];
+    let totalSize = 0;
+    
+    for (const itemName of controlTableItems) {
+      const item = getControlTableItem(itemName);
+      if (!item) {
+        throw new Error(`Unknown control table item: ${itemName}`);
+      }
+      items.push({ name: itemName, ...item });
+      totalSize += item.size;
+    }
+
+    if (totalSize > INDIRECT_ADDRESS.MAX_ENTRIES) {
+      throw new Error(`Total size ${totalSize} exceeds maximum indirect entries ${INDIRECT_ADDRESS.MAX_ENTRIES}`);
+    }
+
+    // Sort items by address to create contiguous blocks
+    items.sort((a, b) => a.address - b.address);
+
+    // Setup indirect addresses
+    let currentIndex = 0;
+    const itemMap = {};
+
+    for (const item of items) {
+      itemMap[item.name] = {
+        startIndex: currentIndex,
+        size: item.size,
+        address: item.address
+      };
+
+      // Map each byte of multi-byte items
+      for (let i = 0; i < item.size; i++) {
+        await this.setupIndirectAddress(currentIndex + i, item.address + i);
+      }
+
+      currentIndex += item.size;
+    }
+
+    this.indirectReadBlock = {
+      items: controlTableItems,
+      itemMap,
+      startIndex: 0,
+      totalSize,
+      dataStartAddress: INDIRECT_ADDRESS.DATA_BASE_ADDRESS
+    };
+
+    return this.indirectReadBlock;
+  }
+
+  /**
+   * Read all values from the indirect READ block
+   * @returns {Promise<Object>} - Object with control table item names as keys and values
+   */
+  async readIndirectBlock() {
+    if (!this.indirectReadBlock) {
+      throw new Error('No indirect read block configured. Call setupIndirectReadBlock() first.');
+    }
+
+    const { totalSize, itemMap, dataStartAddress } = this.indirectReadBlock;
+    
+    // Read all data in one contiguous read
+    const data = await this.read(dataStartAddress, totalSize);
+    
+    // Parse data according to item map
+    const result = {};
+    for (const [itemName, config] of Object.entries(itemMap)) {
+      const { startIndex, size } = config;
+      const itemData = data.slice(startIndex, startIndex + size);
+      
+      // Convert to appropriate data type based on size
+      if (size === 1) {
+        result[itemName] = itemData[0];
+      } else if (size === 2) {
+        result[itemName] = itemData[0] | (itemData[1] << 8);
+      } else if (size === 4) {
+        result[itemName] = itemData[0] | (itemData[1] << 8) | (itemData[2] << 16) | (itemData[3] << 24);
+      } else {
+        result[itemName] = Array.from(itemData);
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Setup indirect WRITE block with control table items
+   * @param {string} blockName - Name for this write block
+   * @param {Array<string>} controlTableItems - Array of control table item names
+   * @returns {Promise<Object>} - Block configuration
+   */
+  async setupIndirectWriteBlock(blockName, controlTableItems) {
+    if (!blockName || typeof blockName !== 'string') {
+      throw new Error('blockName must be a non-empty string');
+    }
+
+    if (!Array.isArray(controlTableItems) || controlTableItems.length === 0) {
+      throw new Error('controlTableItems must be a non-empty array');
+    }
+
+    // Calculate available indices (avoiding read block if it exists)
+    let availableStart = 0;
+    if (this.indirectReadBlock) {
+      availableStart = this.indirectReadBlock.totalSize;
+    }
+
+    // Calculate space used by existing write blocks
+    let usedSpace = availableStart;
+    for (const [, block] of this.indirectWriteBlocks) {
+      usedSpace += block.totalSize;
+    }
+
+    // Get control table information for each item
+    const items = [];
+    let totalSize = 0;
+    
+    for (const itemName of controlTableItems) {
+      const item = getControlTableItem(itemName);
+      if (!item) {
+        throw new Error(`Unknown control table item: ${itemName}`);
+      }
+      items.push({ name: itemName, ...item });
+      totalSize += item.size;
+    }
+
+    if (usedSpace + totalSize > INDIRECT_ADDRESS.MAX_ENTRIES) {
+      throw new Error(`Total size would exceed maximum indirect entries. Used: ${usedSpace}, Need: ${totalSize}, Max: ${INDIRECT_ADDRESS.MAX_ENTRIES}`);
+    }
+
+    // Sort items by address
+    items.sort((a, b) => a.address - b.address);
+
+    // Setup indirect addresses
+    let currentIndex = usedSpace;
+    const itemMap = {};
+
+    for (const item of items) {
+      itemMap[item.name] = {
+        startIndex: currentIndex,
+        size: item.size,
+        address: item.address
+      };
+
+      // Map each byte of multi-byte items
+      for (let i = 0; i < item.size; i++) {
+        await this.setupIndirectAddress(currentIndex + i, item.address + i);
+      }
+
+      currentIndex += item.size;
+    }
+
+    const blockConfig = {
+      name: blockName,
+      items: controlTableItems,
+      itemMap,
+      startIndex: usedSpace,
+      totalSize,
+      dataStartAddress: INDIRECT_ADDRESS.DATA_BASE_ADDRESS + usedSpace
+    };
+
+    this.indirectWriteBlocks.set(blockName, blockConfig);
+    return blockConfig;
+  }
+
+  /**
+   * Write values to an indirect WRITE block
+   * @param {string} blockName - Name of the write block
+   * @param {Object} values - Object with control table item names as keys and values to write
+   * @returns {Promise<boolean>} - Success status
+   */
+  async writeIndirectBlock(blockName, values) {
+    if (!this.indirectWriteBlocks.has(blockName)) {
+      throw new Error(`Indirect write block '${blockName}' not found. Call setupIndirectWriteBlock() first.`);
+    }
+
+    const block = this.indirectWriteBlocks.get(blockName);
+    const { itemMap, dataStartAddress, totalSize } = block;
+
+    // Validate all required values are provided
+    for (const itemName of block.items) {
+      if (!(itemName in values)) {
+        throw new Error(`Missing value for control table item: ${itemName}`);
+      }
+    }
+
+    // Build data buffer
+    const dataBuffer = Buffer.alloc(totalSize);
+    
+    for (const [itemName, value] of Object.entries(values)) {
+      if (!itemMap[itemName]) {
+        throw new Error(`Control table item '${itemName}' not in block '${blockName}'`);
+      }
+
+      const { startIndex, size } = itemMap[itemName];
+      const relativeIndex = startIndex - block.startIndex;
+
+      // Convert value to bytes based on size
+      if (size === 1) {
+        dataBuffer[relativeIndex] = value & 0xFF;
+      } else if (size === 2) {
+        dataBuffer[relativeIndex] = value & 0xFF;
+        dataBuffer[relativeIndex + 1] = (value >> 8) & 0xFF;
+      } else if (size === 4) {
+        dataBuffer[relativeIndex] = value & 0xFF;
+        dataBuffer[relativeIndex + 1] = (value >> 8) & 0xFF;
+        dataBuffer[relativeIndex + 2] = (value >> 16) & 0xFF;
+        dataBuffer[relativeIndex + 3] = (value >> 24) & 0xFF;
+      } else {
+        // For multi-byte arrays
+        const valueArray = Array.isArray(value) ? value : [value];
+        for (let i = 0; i < Math.min(size, valueArray.length); i++) {
+          dataBuffer[relativeIndex + i] = valueArray[i] & 0xFF;
+        }
+      }
+    }
+
+    // Write all data in one contiguous write
+    return await this.write(dataStartAddress, dataBuffer);
+  }
+
+  /**
+   * Clear indirect READ block
+   * @returns {Promise<boolean>} - Success status
+   */
+  async clearIndirectReadBlock() {
+    if (!this.indirectReadBlock) {
+      return true;
+    }
+
+    const { totalSize } = this.indirectReadBlock;
+    
+    // Clear mappings
+    for (let i = 0; i < totalSize; i++) {
+      await this.clearIndirectMapping(i);
+    }
+
+    this.indirectReadBlock = null;
+    return true;
+  }
+
+  /**
+   * Clear an indirect WRITE block
+   * @param {string} blockName - Name of the write block to clear
+   * @returns {Promise<boolean>} - Success status
+   */
+  async clearIndirectWriteBlock(blockName) {
+    if (!this.indirectWriteBlocks.has(blockName)) {
+      return true;
+    }
+
+    const block = this.indirectWriteBlocks.get(blockName);
+    const { startIndex, totalSize } = block;
+
+    // Clear mappings
+    for (let i = startIndex; i < startIndex + totalSize; i++) {
+      await this.clearIndirectMapping(i);
+    }
+
+    this.indirectWriteBlocks.delete(blockName);
+    return true;
+  }
+
+  /**
+   * Get information about current indirect blocks
+   * @returns {Object} - Information about read and write blocks
+   */
+  getIndirectBlockInfo() {
+    return {
+      readBlock: this.indirectReadBlock ? {
+        items: this.indirectReadBlock.items,
+        totalSize: this.indirectReadBlock.totalSize
+      } : null,
+      writeBlocks: Array.from(this.indirectWriteBlocks.entries()).map(([name, block]) => ({
+        name,
+        items: block.items,
+        totalSize: block.totalSize,
+        startIndex: block.startIndex
+      })),
+      availableEntries: INDIRECT_ADDRESS.MAX_ENTRIES - this.getTotalUsedIndirectEntries()
+    };
+  }
+
+  /**
+   * Get total number of used indirect entries
+   * @returns {number} - Number of used entries
+   */
+  getTotalUsedIndirectEntries() {
+    let total = 0;
+    
+    if (this.indirectReadBlock) {
+      total += this.indirectReadBlock.totalSize;
+    }
+
+    for (const [, block] of this.indirectWriteBlocks) {
+      total += block.totalSize;
+    }
+
+    return total;
+  }
+
+  /**
+   * Group sync read using indirect addressing
+   * Compatible with GroupSyncRead for multiple devices
+   * @param {Array<DynamixelDevice>} devices - Array of devices to read from
+   * @returns {Promise<Object>} - Results keyed by device ID
+   */
+  static async groupSyncReadIndirect(devices) {
+    if (!Array.isArray(devices) || devices.length === 0) {
+      throw new Error('devices must be a non-empty array');
+    }
+
+    // Verify all devices have the same read block configuration
+    const firstDevice = devices[0];
+    if (!firstDevice.indirectReadBlock) {
+      throw new Error('Devices must have indirect read block configured');
+    }
+
+    const { dataStartAddress, totalSize } = firstDevice.indirectReadBlock;
+    
+    for (const device of devices) {
+      if (!device.indirectReadBlock || 
+          device.indirectReadBlock.dataStartAddress !== dataStartAddress ||
+          device.indirectReadBlock.totalSize !== totalSize) {
+        throw new Error('All devices must have identical indirect read block configuration');
+      }
+    }
+
+    // Use the first device's connection for group sync read
+    const connection = firstDevice.connection;
+    const deviceIds = devices.map(d => d.id);
+    
+    // Create and send group sync read packet
+    const packet = Protocol2.createGroupSyncReadPacket(deviceIds, dataStartAddress, totalSize, true);
+    const response = await connection.sendAndWaitForGroupResponse(packet, deviceIds);
+    
+    // Parse responses and convert to readable format
+    const results = {};
+    const parsedResponses = Protocol2.parseGroupSyncReadResponse(response, deviceIds, totalSize);
+    
+    for (const device of devices) {
+      if (parsedResponses[device.id] && parsedResponses[device.id].success) {
+        const data = parsedResponses[device.id].data;
+        const { itemMap } = device.indirectReadBlock;
+        
+        // Parse data according to item map
+        const deviceResult = {};
+        for (const [itemName, config] of Object.entries(itemMap)) {
+          const { startIndex, size } = config;
+          const itemData = data.slice(startIndex, startIndex + size);
+          
+          // Convert to appropriate data type based on size
+          if (size === 1) {
+            deviceResult[itemName] = itemData[0];
+          } else if (size === 2) {
+            deviceResult[itemName] = itemData[0] | (itemData[1] << 8);
+          } else if (size === 4) {
+            deviceResult[itemName] = itemData[0] | (itemData[1] << 8) | (itemData[2] << 16) | (itemData[3] << 24);
+          } else {
+            deviceResult[itemName] = Array.from(itemData);
+          }
+        }
+        
+        results[device.id] = {
+          success: true,
+          data: deviceResult,
+          error: parsedResponses[device.id].error
+        };
+      } else {
+        results[device.id] = {
+          success: false,
+          data: null,
+          error: parsedResponses[device.id] ? parsedResponses[device.id].error : 'No response'
+        };
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Group sync write using indirect addressing
+   * Compatible with GroupSyncWrite for multiple devices
+   * @param {Array<Object>} deviceData - Array of {device, blockName, values} objects
+   * @returns {Promise<boolean>} - Success status
+   */
+  static async groupSyncWriteIndirect(deviceData) {
+    if (!Array.isArray(deviceData) || deviceData.length === 0) {
+      throw new Error('deviceData must be a non-empty array');
+    }
+
+    // Group devices by their write block configuration
+    const blockConfigs = new Map();
+    
+    for (const { device, blockName, values } of deviceData) {
+      if (!device.indirectWriteBlocks.has(blockName)) {
+        throw new Error(`Device ${device.id} does not have write block '${blockName}'`);
+      }
+
+      const block = device.indirectWriteBlocks.get(blockName);
+      const configKey = `${block.dataStartAddress}-${block.totalSize}`;
+      
+      if (!blockConfigs.has(configKey)) {
+        blockConfigs.set(configKey, {
+          startAddress: block.dataStartAddress,
+          dataLength: block.totalSize,
+          devices: []
+        });
+      }
+
+      // Build data buffer for this device
+      const dataBuffer = Buffer.alloc(block.totalSize);
+      const { itemMap } = block;
+      
+      for (const [itemName, value] of Object.entries(values)) {
+        if (!itemMap[itemName]) {
+          throw new Error(`Control table item '${itemName}' not in block '${blockName}' for device ${device.id}`);
+        }
+
+        const { startIndex, size } = itemMap[itemName];
+        const relativeIndex = startIndex - block.startIndex;
+
+        // Convert value to bytes based on size
+        if (size === 1) {
+          dataBuffer[relativeIndex] = value & 0xFF;
+        } else if (size === 2) {
+          dataBuffer[relativeIndex] = value & 0xFF;
+          dataBuffer[relativeIndex + 1] = (value >> 8) & 0xFF;
+        } else if (size === 4) {
+          dataBuffer[relativeIndex] = value & 0xFF;
+          dataBuffer[relativeIndex + 1] = (value >> 8) & 0xFF;
+          dataBuffer[relativeIndex + 2] = (value >> 16) & 0xFF;
+          dataBuffer[relativeIndex + 3] = (value >> 24) & 0xFF;
+        }
+      }
+
+      blockConfigs.get(configKey).devices.push({
+        id: device.id,
+        data: Array.from(dataBuffer)
+      });
+    }
+
+    // Send group sync write for each configuration
+    for (const [, config] of blockConfigs) {
+      const { startAddress, dataLength, devices } = config;
+      const firstDevice = deviceData.find(d => d.device.id === devices[0].id).device;
+      
+      const packet = Protocol2.createGroupSyncWritePacket(devices, startAddress, dataLength);
+      await firstDevice.connection.sendPacket(packet);
+    }
+
+    return true;
   }
 }

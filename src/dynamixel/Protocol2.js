@@ -1,4 +1,4 @@
-import { HEADER, INSTRUCTIONS, ERROR_FLAGS, MIN_PACKET_LENGTH } from './constants.js';
+import { HEADER, INSTRUCTIONS, ERROR_FLAGS, MIN_PACKET_LENGTH, BROADCAST_ID } from './constants.js';
 
 /**
  * DYNAMIXEL Protocol 2.0 implementation
@@ -223,5 +223,150 @@ export class Protocol2 {
     if (errorCode & ERROR_FLAGS.ACCESS_ERROR) errors.push('Access Error');
 
     return errors.length > 0 ? errors.join(', ') : 'No Error';
+  }
+
+  /**
+   * Create a GroupSyncRead instruction packet (FAST_SYNC_READ)
+   * @param {Array} deviceIds - Array of DYNAMIXEL IDs to read from
+   * @param {number} startAddress - Starting address to read from
+   * @param {number} dataLength - Number of bytes to read from each device
+   * @param {boolean} fastSyncRead - Use FAST_SYNC_READ instruction (default: true)
+   * @returns {Buffer} - GroupSyncRead instruction packet
+   */
+  static createGroupSyncReadPacket(deviceIds, startAddress, dataLength, fastSyncRead = true) {
+    if (!Array.isArray(deviceIds) || deviceIds.length === 0) {
+      throw new Error('deviceIds must be a non-empty array');
+    }
+
+    const instruction = fastSyncRead ? INSTRUCTIONS.FAST_SYNC_READ : INSTRUCTIONS.SYNC_READ;
+    
+    // Parameter format for SYNC_READ/FAST_SYNC_READ:
+    // Start Address (2 bytes) + Data Length (2 bytes) + [ID1, ID2, ..., IDN]
+    const parameters = [
+      startAddress & 0xFF,         // Start address low byte
+      (startAddress >> 8) & 0xFF,  // Start address high byte
+      dataLength & 0xFF,           // Data length low byte
+      (dataLength >> 8) & 0xFF,    // Data length high byte
+      ...deviceIds                 // Device IDs
+    ];
+
+    return this.createInstructionPacket(BROADCAST_ID, instruction, parameters);
+  }
+
+  /**
+   * Parse GroupSyncRead response data
+   * @param {Buffer} responseBuffer - Raw response buffer containing multiple status packets
+   * @param {Array} expectedIds - Array of expected device IDs
+   * @param {number} expectedDataLength - Expected data length per device
+   * @returns {Object} - Parsed responses keyed by device ID
+   */
+  static parseGroupSyncReadResponse(responseBuffer, expectedIds, _expectedDataLength) {
+    const results = {};
+    let offset = 0;
+
+    // Response format: ERR + ID + Param + CRC + ERR + ID + Param + CRC + ...
+    while (offset < responseBuffer.length) {
+      // Check if we have enough bytes for a minimal packet
+      if (offset + MIN_PACKET_LENGTH > responseBuffer.length) {
+        break;
+      }
+
+      // Find the next packet header
+      let headerFound = false;
+      while (offset <= responseBuffer.length - 4) {
+        if (responseBuffer[offset] === HEADER[0] && 
+            responseBuffer[offset + 1] === HEADER[1] &&
+            responseBuffer[offset + 2] === HEADER[2] && 
+            responseBuffer[offset + 3] === HEADER[3]) {
+          headerFound = true;
+          break;
+        }
+        offset++;
+      }
+
+      if (!headerFound) {
+        break;
+      }
+
+      // Try to parse the packet
+      const remainingBuffer = responseBuffer.slice(offset);
+      const packetLength = this.getCompletePacketLength(remainingBuffer);
+      
+      if (packetLength === 0) {
+        // Incomplete packet, need more data
+        break;
+      }
+
+      const packetBuffer = remainingBuffer.slice(0, packetLength);
+      
+      try {
+        const statusPacket = this.parseStatusPacket(packetBuffer);
+        if (statusPacket && expectedIds.includes(statusPacket.id)) {
+          results[statusPacket.id] = {
+            id: statusPacket.id,
+            error: statusPacket.error,
+            data: Buffer.from(statusPacket.parameters),
+            success: statusPacket.error === 0
+          };
+        }
+        offset += packetLength;
+      } catch (_error) {
+        // Skip this packet and continue
+        offset++;
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Create a GroupSyncWrite instruction packet
+   * @param {Array} writeData - Array of objects with {id, data} properties
+   * @param {number} startAddress - Starting address to write to
+   * @param {number} dataLength - Number of bytes to write to each device
+   * @returns {Buffer} - GroupSyncWrite instruction packet
+   */
+  static createGroupSyncWritePacket(writeData, startAddress, dataLength) {
+    if (!Array.isArray(writeData) || writeData.length === 0) {
+      throw new Error('writeData must be a non-empty array');
+    }
+
+    // Validate data format
+    for (const item of writeData) {
+      if (!item.id || !item.data) {
+        throw new Error('Each writeData item must have id and data properties');
+      }
+      if (!Array.isArray(item.data) && !Buffer.isBuffer(item.data)) {
+        throw new Error('writeData.data must be an array or Buffer');
+      }
+      const dataArray = Array.isArray(item.data) ? item.data : Array.from(item.data);
+      if (dataArray.length !== dataLength) {
+        throw new Error(`Data length mismatch for ID ${item.id}: expected ${dataLength}, got ${dataArray.length}`);
+      }
+    }
+
+    // Parameter format for SYNC_WRITE (following ROBOTIS Protocol 2.0 specification):
+    // Packet: HEADER(4) + ID(1) + LENGTH(2) + INSTRUCTION(1) + PARAMETERS(...) + CRC(2)
+    // Parameters: START_ADDR_L + START_ADDR_H + DATA_LEN_L + DATA_LEN_H + [ID1 + DATA1 + ID2 + DATA2 + ... + IDN + DATAN]
+    // 
+    // This matches Python SDK's syncWriteTxOnly implementation:
+    // - data_length: number of bytes to write to each device
+    // - param: contains ID+DATA pairs for all devices
+    // - Each device contributes: 1 byte (ID) + data_length bytes (DATA)
+    const parameters = [
+      startAddress & 0xFF,         // Start address low byte
+      (startAddress >> 8) & 0xFF,  // Start address high byte
+      dataLength & 0xFF,           // Data length low byte
+      (dataLength >> 8) & 0xFF     // Data length high byte
+    ];
+
+    // Add ID + DATA pairs
+    for (const item of writeData) {
+      parameters.push(item.id);
+      const dataArray = Array.isArray(item.data) ? item.data : Array.from(item.data);
+      parameters.push(...dataArray);
+    }
+
+    return this.createInstructionPacket(BROADCAST_ID, INSTRUCTIONS.SYNC_WRITE, parameters);
   }
 }
