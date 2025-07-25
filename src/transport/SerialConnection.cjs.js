@@ -432,4 +432,56 @@ export class SerialConnection extends EventEmitter {
       version: getSerialPort() ? 'Available' : 'Not available'
     };
   }
+
+  /**
+   * Send packet and wait for group response from multiple devices
+   * Used for GroupSyncRead operations
+   * @param {Buffer} packet - Group sync read packet
+   * @param {Array<number>} expectedIds - Array of expected device IDs
+   * @param {number} timeout - Timeout in milliseconds
+   * @returns {Promise<Buffer>} - Combined response buffer
+   */
+  async sendAndWaitForGroupResponse(packet, expectedIds, timeout = null) {
+    return new Promise((resolve, reject) => {
+      const timeoutMs = timeout || this.timeout;
+      const receivedIds = new Set();
+      let combinedBuffer = Buffer.alloc(0);
+
+      const onPacket = (statusPacket) => {
+        // Check if this packet is from one of our expected devices
+        const packetId = statusPacket[4];
+        if (expectedIds.includes(packetId)) {
+          receivedIds.add(packetId);
+          combinedBuffer = Buffer.concat([combinedBuffer, statusPacket]);
+          
+          // If we've received responses from all expected devices, resolve
+          if (receivedIds.size === expectedIds.length) {
+            clearTimeout(timeoutId);
+            this.removeListener('packet', onPacket);
+            resolve(combinedBuffer);
+          }
+        }
+      };
+
+      this.on('packet', onPacket);
+
+      const timeoutId = setTimeout(() => {
+        this.removeListener('packet', onPacket);
+        const missing = expectedIds.filter(id => !receivedIds.has(id));
+        reject(new Error(`Timeout waiting for group response. Missing responses from devices: ${missing.join(', ')}`));
+      }, timeoutMs);
+
+      this.send(packet).catch(reject);
+    });
+  }
+
+  /**
+   * Send packet without waiting for response
+   * Used for GroupSyncWrite operations (which don't return responses)
+   * @param {Buffer} packet - Packet to send
+   * @returns {Promise<void>}
+   */
+  async sendPacket(packet) {
+    await this.send(packet);
+  }
 }
