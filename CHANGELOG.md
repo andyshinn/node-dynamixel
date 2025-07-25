@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **GroupSyncRead and GroupSyncWrite Operations** - Efficient multi-device communication
+  - `Protocol2.createGroupSyncReadPacket()` - Creates FAST_SYNC_READ and SYNC_READ packets for multiple devices
+  - `Protocol2.parseGroupSyncReadResponse()` - Parses responses from multiple devices in a single operation
+  - `Protocol2.createGroupSyncWritePacket()` - Creates SYNC_WRITE packets for broadcasting data to multiple devices
+  - `fastSyncRead` option for optimized read operations using FAST_SYNC_READ instruction (0x8A)
+  - Full Protocol 2.0 compliance verified against official ROBOTIS Python SDK
+  - Connection layer support: `sendAndWaitForGroupResponse()` and `sendPacket()` methods
+  - Broadcast ID (0xFE) communication for simultaneous multi-device operations
+  - No response expected for GroupSyncWrite operations as per protocol specification
+- **Enhanced Control Table with Size Information** - Programmatic access to control table metadata
+  - `CONTROL_TABLE_SIZE` object with byte sizes for all control table items
+  - `getControlTableItem(name)` helper function for string-based addressing
+  - Support for control table items by name (e.g., 'PRESENT_POSITION', 'GOAL_VELOCITY')
+  - Enables flexible addressing schemes and automatic size calculation
+- **Advanced Indirect Addressing System** - Professional-grade indirect addressing implementation
+  - **Single Indirect READ Block**: `setupIndirectReadBlock(controlTableItems)` with automatic contiguous mapping
+  - `readIndirectBlock()` - Read all configured items in one operation, returns parsed values by name
+  - **Multiple Named WRITE Blocks**: `setupIndirectWriteBlock(blockName, controlTableItems)` for organized write operations
+  - `writeIndirectBlock(blockName, values)` - Write to named blocks with control table item values
+  - **Group Sync Integration**: `groupSyncReadIndirect()` and `groupSyncWriteIndirect()` static methods
+  - Smart index allocation avoiding conflicts between read and write blocks
+  - Automatic data type conversion (1-byte, 2-byte, 4-byte values)
+  - Block management: `getIndirectBlockInfo()`, `clearIndirectReadBlock()`, `clearIndirectWriteBlock()`
+  - Full compatibility with GroupSyncRead/Write for multi-device indirect operations
+- **Comprehensive Test Coverage** - Complete testing for all new functionality
+  - 9 GroupSync operation tests covering packet construction and response parsing
+  - 21 indirect addressing tests covering all block operations and edge cases
+  - Protocol compliance verification against Python SDK reference implementation
+  - All 340 tests pass with mandatory workflow (lint, build, test, pack) compliance
+
+### Technical Improvements
+- **100% Python SDK Alignment** - Verified compatibility with official ROBOTIS DynamixelSDK
+  - Instruction constants match: SYNC_READ (0x82), SYNC_WRITE (0x83), FAST_SYNC_READ (0x8A)
+  - Packet structure identical: Header + Broadcast ID + Parameters + CRC
+  - Parameter formatting matches: Start Address (2 bytes) + Data Length (2 bytes) + Device Data
+  - Response parsing handles multiple status packets as per official specification
+- **Enhanced Protocol 2.0 Support** - Extended communication capabilities
+  - Multi-device synchronous operations with broadcast communication
+  - Advanced indirect addressing following DYNAMIXEL Protocol 2.0 specification
+  - Professional robotics features with enterprise-grade error handling
+- **Modern Architecture Extensions** - Beyond reference implementation capabilities
+  - TypeScript support with comprehensive type definitions
+  - EventEmitter-based async patterns with proper resource management
+  - ES6+ modules with CommonJS compatibility for maximum ecosystem support
+
 ## [0.1.0] - 2025-07-17
 
 ### Added

@@ -110,3 +110,4 @@ This is a Node.js library for controlling DYNAMIXEL servo motors via U2D2 interf
 - **Update Changelog Workflow**
   - Always update `CHANGELOG.md` file when bumping the version
   - Include a summary of changes, additions, and fixes in the changelog
+  - **Make sure our release versions do not start with the v prefix. They should be semver `#.#.#`.**
